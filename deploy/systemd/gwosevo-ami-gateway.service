@@ -1,0 +1,28 @@
+[Unit]
+Description=GWO SEVO persistent broadcast AMI gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=gwosevo
+Group=gwosevo
+WorkingDirectory=/var/www/gwosevo-voice-broadcast
+ExecStart=/usr/bin/php artisan broadcast:gateway
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/gwosevo-voice-broadcast/storage /var/www/gwosevo-voice-broadcast/bootstrap/cache
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

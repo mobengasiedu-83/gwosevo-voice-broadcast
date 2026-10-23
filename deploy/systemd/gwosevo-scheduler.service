@@ -1,0 +1,13 @@
+[Unit]
+Description=GWO SEVO Laravel scheduled tasks
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=gwosevo
+Group=gwosevo
+WorkingDirectory=/var/www/gwosevo-voice-broadcast
+ExecStart=/usr/bin/php artisan schedule:run
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

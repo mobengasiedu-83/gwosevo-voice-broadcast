@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GWO SEVO scheduled tasks every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=gwosevo-scheduler.service
+
+[Install]
+WantedBy=timers.target

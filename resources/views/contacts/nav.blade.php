@@ -1,0 +1,2 @@
+<nav class="module-tabs" aria-label="Contacts navigation">@foreach(['contacts.index'=>'Contact directory','contacts.groups'=>'Contact groups','contacts.imports'=>'Lists & imports','contacts.suppressions'=>'Suppression / DNC','contacts.consents'=>'Consent evidence'] as $route=>$label)@if($route!=='contacts.imports'||auth()->user()->can('contacts.manage'))<a href="{{ route($route) }}" @if(request()->routeIs($route)) aria-current="page" @endif>{{ $label }}</a>@endif
+@endforeach</nav>

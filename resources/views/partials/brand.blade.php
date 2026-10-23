@@ -1,0 +1,1 @@
+<a class="brand" href="{{ url('/') }}" aria-label="GWO SEVO home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 13v6m6-11v16m6-20v24m6-17v10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span><span>GWO SEVO <span class="brand-light">Dialer</span><small>OPERATIONS CONSOLE</small></span></a>
