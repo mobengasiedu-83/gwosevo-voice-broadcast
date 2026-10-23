@@ -1,0 +1,6 @@
+(() => {
+ function count(){document.querySelectorAll('[data-campaign-countdown]').forEach(el=>{const seconds=Math.max(0,Math.ceil((Date.parse(el.dataset.campaignCountdown)-Date.now())/1000));if(!Number.isFinite(seconds))return;const days=Math.floor(seconds/86400),h=Math.floor(seconds%86400/3600),m=Math.floor(seconds%3600/60),s=seconds%60;el.querySelector('strong').textContent=seconds?(el.dataset.armed==='1'?'Starts in ':'Scheduled in ')+(days?days+'d ':'')+[h,m,s].map(v=>String(v).padStart(2,'0')).join(':'):(el.dataset.armed==='1'?'Schedule reached · awaiting dispatch':'Schedule reached · click Start');});}
+ count();setInterval(count,1000);const panel=document.getElementById('campaign-live-status');if(!panel)return;let busy=false;
+ async function update(){if(busy||document.hidden||document.activeElement?.matches('input,select,textarea'))return;busy=true;const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),5000);try{const r=await fetch(panel.dataset.url,{headers:{Accept:'application/json'},cache:'no-store',signal:abort.signal});if(r.redirected){location.assign(r.url);return;}if(!r.ok)return;const data=await r.json();if(data.status!==panel.dataset.status)location.reload();}catch(_){}finally{clearTimeout(timer);busy=false;}}
+ if(['draft','ready','scheduled','running','paused'].includes(panel.dataset.status))setInterval(update,5000);
+})();

@@ -1,5 +1,7 @@
 # Module 2 — Campaigns
 
+**Current flow:** [Audio approval → Ready → Start](campaign-audio-workflow.md). This newer flow replaces the separate campaign approval step described below for new campaigns; the earlier endpoints remain for compatibility.
+
 Implements specification v2 section 19.2 using the existing approved direct-broadcast and interactive-IVR engine. Open **Campaigns** in the sidebar, or `/campaigns`.
 
 ## Workflows

@@ -127,6 +127,7 @@ class OneWayBroadcastTest extends TestCase
 
     private function campaign(int $targets = 1, string $format = 'international', string $endpoint = 'approved-trunk', array $overrides = []): Campaign
     {
+        config()->set('broadcasting_discovery.trunk', $endpoint);
         $trunk = TrunkProfile::firstOrCreate(['name' => $endpoint], ['caller_id' => $format === 'national' ? '0596921082' : '233302123456', 'max_channels' => 10, 'reserved_channels' => 2, 'safe_channels' => 5, 'max_cps' => 2, 'number_format' => $format, 'active' => true, 'verified_at' => now(), 'verified_by' => $this->manager->id, 'evidence' => 'carrier/confirmation']);
         $uuid = (string) Str::uuid();
         $wav = $this->wav();
@@ -393,7 +394,8 @@ class OneWayBroadcastTest extends TestCase
         $campaign = $this->campaign();
         $a = $this->reserve();
         $this->send($a);
-        $this->actingAs($this->manager)->get('/broadcast')->assertOk()->assertSee('Approved message');
+        $this->actingAs($this->manager)->get('/broadcast')->assertOk();
+        $this->get('/audio')->assertOk()->assertSee('Approved message');
         $this->get('/broadcast/campaigns/'.$campaign->id.'/report')->assertOk()->assertSee($a->uuid);
         $other = $this->user('Campaign Manager');
         $this->actingAs($other)->get('/broadcast/campaigns/'.$campaign->id.'/report')->assertForbidden();

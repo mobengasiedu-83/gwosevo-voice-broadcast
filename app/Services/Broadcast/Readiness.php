@@ -22,8 +22,14 @@ class Readiness
 
     public function audio(AudioFile $audio): void
     {
-        if ($audio->status !== 'approved' || ! $audio->deployed_at || ! $audio->checksum || ! Storage::disk('local')->exists($audio->storage_key ?? '') || ! hash_equals($audio->checksum, hash_file('sha256', Storage::disk('local')->path($audio->storage_key)))) {
-            $this->fail('Approved, deployed, checksum-verified audio is required.');
+        if ($audio->status !== 'approved') {
+            $this->fail('The selected audio must be approved in the Audio Library.');
+        }
+        if (! $audio->checksum || ! Storage::disk('local')->exists($audio->storage_key ?? '') || ! hash_equals($audio->checksum, hash_file('sha256', Storage::disk('local')->path($audio->storage_key)))) {
+            $this->fail('The audio file is missing or its checksum has changed. Upload and approve a new recording.');
+        }
+        if (! $audio->deployed_at) {
+            $this->fail('Audio is approved, but PBX installation has not been recorded. Open the Audio Library, install the WAV on the PBX, then record its verified installation.');
         }
     }
 
@@ -50,6 +56,10 @@ class Readiness
         $trunk = TrunkProfile::findOrFail($c['trunk_id']);
         $this->audio($audio);
         $this->trunk($trunk);
+        $configured = config('broadcasting_discovery.trunk');
+        if (is_string($configured) && $configured !== '' && $trunk->name !== $configured) {
+            $this->fail('Campaign must use the configured trunk.');
+        }
         $callerId = empty($c['caller_id']) ? $trunk->caller_id : $c['caller_id'];
         if (! in_array($callerId, array_merge([$trunk->caller_id], $trunk->allowed_caller_ids ?? []), true)) {
             $this->fail('Caller ID must be approved for this trunk.');
@@ -95,9 +105,7 @@ class Readiness
         if (DB::table('suppression_entries')->where('phone_e164', $phone)->where('effective_at', '<=', now())->exists()) {
             return 'suppressed';
         }
-        if (! DB::table('contact_consents')->where('contact_id', $contactId)->where('purpose', $purpose)->where('granted_at', '<=', now())->whereNull('revoked_at')->exists()) {
-            return 'no_consent';
-        }
+
 
         return null;
     }
@@ -108,6 +116,10 @@ class Readiness
         $trunk = TrunkProfile::findOrFail($s['trunk_id']);
         $this->audio($audio);
         $this->trunk($trunk);
+        $configured = config('broadcasting_discovery.trunk');
+        if (is_string($configured) && $configured !== '' && $trunk->name !== $configured) {
+            $this->fail('Campaign must use the configured trunk.');
+        }
         if ($audio->uuid !== $s['audio_uuid'] || $audio->checksum !== $s['checksum'] || $trunk->name !== $s['trunk_name'] || ! in_array($s['caller_id'], array_merge([$trunk->caller_id], $trunk->allowed_caller_ids ?? []), true) || $trunk->number_format !== $s['number_format']) {
             $this->fail('Approved assets changed; create a new campaign approval.');
         }

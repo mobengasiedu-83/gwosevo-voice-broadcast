@@ -92,12 +92,41 @@ class AudioLibrary
                 app(Readiness::class)->fail('Audio checksum mismatch.');
             }
             $audio->update(['status' => 'approved', 'approved_by' => $actor->id, 'approved_at' => now()]);
-            Campaign::query()->where('status', 'draft')->get()->each(function (Campaign $campaign) use ($audio) {
-                if (($campaign->configuration['audio_id'] ?? null) === $audio->id) {
-                    $campaign->update(['status' => 'ready']);
-                }
-            });
-            app(Foundation::class)->audit($actor, 'audio.approved', $audio, ['checksum' => $audio->checksum]);
+            foreach (Campaign::where('status', 'draft')->whereNull('archived_at')->whereIn('configuration->audio_id', [$audio->id, (string) $audio->id])->lockForUpdate()->get() as $campaign) {
+                $campaign->update(['status' => 'ready']);
+                app(Foundation::class)->audit($actor, 'campaign.audio_ready', $campaign, ['audio_id' => $audio->id]);
+            }
+            app(Foundation::class)->audit($actor, 'audio.approved', $audio, ['checksum' => $audio->checksum, 'self_approval' => $audio->uploaded_by === $actor->id]);
+        });
+    }
+
+    public function reject(User $actor, AudioFile $audio, string $reason): void
+    {
+        Gate::forUser($actor)->authorize('audio.approve');
+        DB::transaction(function () use ($actor, $audio, $reason) {
+            app(Engine::class)->mutex();
+            $audio = AudioFile::whereKey($audio->id)->lockForUpdate()->firstOrFail();
+            abort_if($audio->uploaded_by === $actor->id && ! $actor->isSuperAdministrator(), 403);
+            if ($audio->status !== 'pending') {
+                app(Readiness::class)->fail('Only pending audio can be rejected.');
+            }
+            $audio->update(['status' => 'rejected', 'rejected_by' => $actor->id, 'rejected_at' => now(), 'rejection_reason' => $reason]);
+            app(Foundation::class)->audit($actor, 'audio.rejected', $audio, ['reason' => $reason]);
+        });
+    }
+
+    public function resubmit(User $actor, AudioFile $audio): void
+    {
+        Gate::forUser($actor)->authorize('audio.manage');
+        DB::transaction(function () use ($actor, $audio) {
+            app(Engine::class)->mutex();
+            $audio = AudioFile::whereKey($audio->id)->lockForUpdate()->firstOrFail();
+            abort_unless($audio->uploaded_by === $actor->id || $actor->isSuperAdministrator(), 403);
+            if ($audio->status !== 'rejected') {
+                app(Readiness::class)->fail('Only rejected audio can be submitted again.');
+            }
+            $audio->update(['status' => 'pending', 'rejected_by' => null, 'rejected_at' => null, 'rejection_reason' => null]);
+            app(Foundation::class)->audit($actor, 'audio.resubmitted', $audio);
         });
     }
 

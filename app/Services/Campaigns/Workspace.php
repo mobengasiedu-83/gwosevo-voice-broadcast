@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class Workspace
 {
@@ -63,9 +64,13 @@ class Workspace
             if ($trunk) {
                 $config['trunk_id'] = $trunk->id;
             }
+            if ($trunk && ! empty($config['caller_id']) && ! in_array($config['caller_id'], array_merge([$trunk->caller_id], $trunk->allowed_caller_ids ?? []), true)) {
+                throw ValidationException::withMessages(['caller_id' => 'Choose a caller ID approved for the configured trunk.']);
+            }
             $ids = array_values(array_unique(array_filter(array_map('trim', explode(',', $data['contact_ids'] ?? '')), fn ($v) => $v !== '')));
+            $config['explicit_contact_ids'] = $ids;
             if (! empty($data['source_group_id'])) {
-                $group = ContactGroup::where('owner_id', $u->id)->where('active', true)->findOrFail($data['source_group_id']);
+                $group = ContactGroup::when(! $u->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $u->id))->where('active', true)->findOrFail($data['source_group_id']);
                 $ids = array_values(array_unique(array_merge($ids, $group->contacts()->pluck('contacts.id')->map(fn ($id) => (string) $id)->all())));
             }
             Validator::make(['ids' => $ids], ['ids' => 'array|max:10000', 'ids.*' => 'integer|distinct|exists:contacts,id'])->validate();
@@ -82,17 +87,9 @@ class Workspace
 
     public function configuredTrunk(): ?TrunkProfile
     {
-        $trunks = TrunkProfile::query()->where('active', true)->whereNotNull('verified_at');
-        $configuredName = config('broadcasting_discovery.trunk');
+        $name = config('broadcasting_discovery.trunk');
 
-        if (is_string($configuredName) && $configuredName !== '') {
-            $configured = (clone $trunks)->where('name', $configuredName)->first();
-            if ($configured) {
-                return $configured;
-            }
-        }
-
-        return $trunks->orderBy('id')->first();
+        return is_string($name) && $name !== '' ? TrunkProfile::where('name', $name)->first() : null;
     }
 
     public function duplicate(User $u, Campaign $c, string $name): Campaign
@@ -135,7 +132,7 @@ class Workspace
                 abort_unless($parent->owner_id === $u->id || $u->isSuperAdministrator(), 403);
             }
             $config = $c->configuration ?? [];
-            unset($config['contact_ids'],$config['scheduled_at'],$config['source_group_id']);
+            unset($config['contact_ids'],$config['explicit_contact_ids'],$config['scheduled_at'],$config['source_group_id']);
             $family = $parent?->family_uuid ?? (string) Str::uuid();
             $t = CampaignTemplate::create(['family_uuid' => $family, 'version' => (CampaignTemplate::where('family_uuid', $family)->max('version') ?? 0) + 1, 'name' => $name, 'owner_id' => $u->id, 'blueprint' => ['purpose' => $c->purpose, 'type' => $c->type, 'timezone' => $c->timezone, 'configuration' => $config], 'created_at' => now()]);
             app(Foundation::class)->audit($u, 'campaign.template_version_created', $t, ['source_campaign_id' => $c->id]);
@@ -165,11 +162,10 @@ class Workspace
         $current = Contact::whereIn('id', array_column($s['targets'] ?? [], 'id') ?: $ids)->pluck('phone_e164', 'id');
         $targets = $s['targets'] ?? array_map(fn ($id) => ['id' => $id, 'phone_e164' => $current[$id] ?? null], $ids);
         $suppressed = DB::table('suppression_entries')->whereIn('phone_e164', $current->values())->where('effective_at', '<=', now())->pluck('phone_e164')->flip();
-        $consented = DB::table('contact_consents')->whereIn('contact_id', $current->keys())->where('purpose', $c->purpose)->where('granted_at', '<=', now())->whereNull('revoked_at')->pluck('contact_id')->flip();
-        $counts = ['eligible' => 0, 'no_consent' => 0, 'suppressed' => 0, 'contact_changed' => 0];
+        $counts = ['eligible' => 0, 'suppressed' => 0, 'contact_changed' => 0];
         foreach ($targets as $target) {
             $id = $target['id'];
-            $reason = ! isset($current[$id]) || $current[$id] !== $target['phone_e164'] ? 'contact_changed' : (isset($suppressed[$current[$id]]) ? 'suppressed' : (! isset($consented[$id]) ? 'no_consent' : 'eligible'));
+            $reason = ! isset($current[$id]) || $current[$id] !== $target['phone_e164'] ? 'contact_changed' : (isset($suppressed[$current[$id]]) ? 'suppressed' : 'eligible');
             $counts[$reason]++;
         }
 

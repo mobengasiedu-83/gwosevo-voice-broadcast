@@ -104,7 +104,7 @@ class Imports
             }
             $u = User::findOrFail($b->owner_id);
             $group = ContactGroup::whereKey($b->contact_group_id)->lockForUpdate()->firstOrFail();
-            if (! $u->can('contacts.manage') || $group->owner_id !== $u->id || ! $group->active) {
+            if (! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
                 $b->update(['status' => 'blocked']);
 
                 return;

@@ -10,6 +10,7 @@ use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\Engine;
+use App\Services\Campaigns\Workspace;
 use App\Services\Foundation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,13 +35,16 @@ class BroadcastController extends Controller
         abort_unless($request->user()->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']), 403);
 
         return view('broadcast.audio-library', [
-            'audio' => AudioFile::whereNotNull('uuid')->latest()->paginate(25),
+            'audio' => AudioFile::whereNotNull('uuid')->when($request->validate(['status' => 'nullable|in:pending,approved,rejected'])['status'] ?? null, fn ($q, $status) => $q->where('status', $status))->latest()->paginate(25)->withQueryString(),
         ]);
     }
 
     public function configure(Request $request, Campaign $campaign, Engine $engine)
     {
         $data = $request->validate(['audio_id' => 'required|integer', 'trunk_id' => 'required|integer', 'concurrency' => 'required|integer|min:1|max:100', 'cps' => 'required|numeric|gt:0|max:100', 'window_start' => 'required|date_format:H:i', 'window_end' => 'required|date_format:H:i', 'contact_ids' => 'required|string|max:100000', 'caller_id' => 'nullable|string|max:16', 'timezone' => 'nullable|timezone', 'scheduled_at' => 'nullable|date', 'max_attempts' => 'nullable|integer|min:1|max:5', 'retry_delay_seconds' => 'nullable|integer|min:60|max:86400', 'priority' => 'nullable|integer|min:1|max:10', 'ivr_flow_id' => 'nullable|integer']);
+        $trunk = app(Workspace::class)->configuredTrunk();
+        abort_unless($trunk, 422, 'Set the configured trunk first.');
+        $data['trunk_id'] = $trunk->id;
         $data['contact_ids'] = array_map('trim', explode(',', $data['contact_ids']));
         $engine->configure($request->user(), $campaign, $data);
 
@@ -86,6 +90,21 @@ class BroadcastController extends Controller
         $library->approve($request->user(), $audio);
 
         return back()->with('status', 'Audio approved.');
+    }
+
+    public function rejectAudio(Request $request, AudioFile $audio, AudioLibrary $library)
+    {
+        $data = $request->validate(['reason' => 'required|string|max:2000']);
+        $library->reject($request->user(), $audio, $data['reason']);
+
+        return back()->with('status', 'Audio rejected. Linked draft campaigns remain drafts.');
+    }
+
+    public function resubmitAudio(Request $request, AudioFile $audio, AudioLibrary $library)
+    {
+        $library->resubmit($request->user(), $audio);
+
+        return back()->with('status', 'Audio submitted for review.');
     }
 
     public function deployAudio(Request $request, AudioFile $audio, AudioLibrary $library)

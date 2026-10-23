@@ -1,13 +1,13 @@
 @extends('foundation.layout')
 @section('content')
-<h2>Broadcast operations</h2>@if(auth()->user()->hasAnyPermission(['campaigns.manage','campaigns.approve','telephony.manage']))<p><a href="{{ route('interactive.index') }}">Interactive flow builder & caller ID settings</a></p>@endif<p><a href="{{ route('workspace') }}">Contacts and approvals</a></p>
+<h2>Broadcast operations</h2>@if(auth()->user()->hasAnyPermission(['campaigns.manage','campaigns.approve','telephony.manage']))<p><a href="{{ route('interactive.index') }}">Voice & IVR</a></p>@endif @can('telephony.manage')<p><a href="{{ route('telephony.index') }}">Telephony & caller IDs</a></p>@endcan<p><a href="{{ route('workspace') }}">Contacts and approvals</a></p>
 @if(!config('voice_broadcast.enabled'))<p class="notice">Live dispatch is disabled. Verified capacity settings and PBX installation are required before enabling it.</p>@endif
 @if($gateway)<section><h2>Gateway health</h2><p>AMI: {{ $gateway->healthy && $gateway->heartbeat_at && strtotime($gateway->heartbeat_at)>time()-15 ? 'Connected' : 'Offline or stale' }} · Last heartbeat (UTC): {{ $gateway->heartbeat_at ?? 'Never' }} · Channel snapshot: {{ $gateway->snapshot_at ?? 'Never' }}</p><p>Emergency stop: {{ $gateway->emergency_stop ? 'Active' : 'Clear' }}</p></section>@endif
 @can('broadcast.emergency')<section><h2>Emergency broadcast controls</h2><p>Stop cancels broadcast campaigns and requests hangup only on their identified channels. Ordinary PBX calls continue.</p><form method="post" action="{{ route('broadcast.emergency') }}">@csrf<button name="action" value="stop">Stop all broadcasts</button><button name="action" value="reset">Reset global stop</button></form></section>@endcan
 <section><h2>Campaign setup and controls</h2>
 @foreach($campaigns as $campaign)<article><h3>{{ $campaign->name }} <small>{{ $campaign->status }}</small></h3>
 <a href="{{ route('broadcast.report',$campaign) }}">View call report</a>
-@if($campaign->status==='draft' && ($campaign->owner_id===auth()->id() || auth()->user()->isSuperAdministrator()) && auth()->user()->can('campaigns.manage'))
+@if($campaign->status==='draft' && (($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()) || auth()->user()->isSuperAdministrator()) && auth()->user()->can('campaigns.manage'))
 <details><summary>Configure broadcast</summary><form method="post" action="{{ route('broadcast.configure',$campaign) }}">@csrf
 <label>Audio <select name="audio_id" required>@foreach($audio->where('status','approved')->whereNotNull('deployed_at') as $asset)<option value="{{ $asset->id }}">{{ $asset->name }} (#{{ $asset->id }})</option>@endforeach</select></label>
 <label>Trunk <select name="trunk_id" required>@foreach($trunks->where('active',true) as $trunk)<option value="{{ $trunk->id }}">{{ $trunk->name }}</option>@endforeach</select></label>
@@ -31,12 +31,7 @@
 </form>@endcan
 @can('broadcast.emergency')@if(in_array($campaign->status,['running','paused','scheduled']))<form method="post" action="{{ route('broadcast.control',$campaign) }}">@csrf<button name="action" value="emergency">Stop this broadcast</button></form>@endif@endcan
 </article>@endforeach{{ $campaigns->links() }}</section>
-@if(auth()->user()->hasAnyPermission(['audio.manage','audio.approve','telephony.view']))<section id="voice-library"><h2>Voice library</h2>
-@can('audio.manage')<form method="post" enctype="multipart/form-data" action="{{ route('broadcast.audio.upload') }}">@csrf<label>Name <input name="name" required maxlength="255"></label><label>8 kHz mono 16-bit PCM WAV <input type="file" name="audio" accept=".wav" required></label><button>Validate and upload</button></form>@endcan
-@foreach($audio as $asset)<article><h3>{{ $asset->name }} <small>{{ $asset->status }} · {{ $asset->duration }} seconds · {{ $asset->deployed_at ? 'Deployment recorded' : 'Not deployed' }}</small></h3><p><a href="{{ route('broadcast.audio.download',$asset) }}">Download private WAV</a></p><p style="overflow-wrap:anywhere">ID: {{ $asset->uuid }}<br>SHA-256: {{ $asset->checksum }}</p>
-@can('audio.approve')@if($asset->status==='pending' && ($asset->uploaded_by!==auth()->id() || auth()->user()->isSuperAdministrator()))<form method="post" action="{{ route('broadcast.audio.approve',$asset) }}">@csrf<button>Approve reviewed audio</button></form>@endif@endcan
-@can('telephony.manage')@if($asset->status==='approved')<details><summary>Record verified PBX deployment</summary><p>Install the WAV and AstDB allowlist entry using the deployment runbook, then record the actual PBX checksum and evidence.</p><form method="post" action="{{ route('broadcast.audio.deploy',$asset) }}">@csrf<label>PBX SHA-256 <input name="checksum" required pattern="[a-f0-9]{64}"></label><label>Evidence reference <input name="evidence" required maxlength="2000"></label><button>Record deployment</button></form></details>@endif@endcan
-</article>@endforeach</section>@endif
+@if(auth()->user()->hasAnyPermission(['audio.manage','audio.approve','telephony.view']))<section><h2>Audio library</h2><p><a href="{{ route('audio.index') }}">Open recordings, previews and approval actions →</a></p></section>@endif
 @can('telephony.view')<section><h2>Trunk inventory</h2>@foreach($trunks as $trunk)<p>{{ $trunk->name }} · {{ $trunk->active ? 'Active' : 'Disabled' }} · Carrier {{ $trunk->max_channels }} / reserved {{ $trunk->reserved_channels }} / measured safe {{ $trunk->safe_channels }} channels · {{ $trunk->max_cps }} CPS</p>
 @can('telephony.manage')@if($trunk->active)<form method="post" action="{{ route('broadcast.trunk.disable',$trunk) }}">@csrf<button>Disable new broadcasts on trunk</button></form>@endif@endcan
 @endforeach

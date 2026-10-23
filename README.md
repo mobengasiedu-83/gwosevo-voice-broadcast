@@ -15,6 +15,9 @@ Dedicated screens are available at `/contacts` and `/contacts/groups`. See [cont
 
 ## Campaigns
 
+Current workflow: [groups → contacts → audio approval → Ready → Start](docs/campaign-audio-workflow.md). The dedicated audio library is at `/audio`.
+
+
 Module 2 is available at `/campaigns`. See [campaign workflows and operations](docs/module-2-campaigns.md).
 
 ## Operations dashboard

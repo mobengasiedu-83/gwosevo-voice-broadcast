@@ -60,9 +60,9 @@ class ContactWorkspaceController extends Controller
             $query->orderBy('id', ($f['sort'] ?? '') === 'oldest' ? 'asc' : 'desc');
         }
         $groups = $query->withCount('contacts')->paginate(15)->withQueryString();
-        $stats = ['groups' => $total, 'contacts' => Contact::whereNotNull('phone_e164')->count(), 'imports' => ContactImport::where('owner_id', $r->user()->id)->where('created_at', '>=', now()->startOfMonth())->count(), 'suppressed' => DB::table('suppression_entries')->where('effective_at', '<=', now())->count()];
+        $stats = ['groups' => $total, 'contacts' => Contact::whereNotNull('phone_e164')->count(), 'imports' => ContactImport::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('created_at', '>=', now()->startOfMonth())->count(), 'suppressed' => DB::table('suppression_entries')->where('effective_at', '<=', now())->count()];
 
-        return response()->view('contacts.groups', ['groups' => $groups, 'stats' => $stats, 'f' => $f, 'categories' => $this->groupsQuery($r)->select('category')->distinct()->orderBy('category')->pluck('category'), 'uploadGroups' => ContactGroup::where('owner_id', $r->user()->id)->where('active', true)->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
+        return response()->view('contacts.groups', ['groups' => $groups, 'stats' => $stats, 'f' => $f, 'categories' => $this->groupsQuery($r)->select('category')->distinct()->orderBy('category')->pluck('category'), 'uploadGroups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function saveGroup(Request $r, Foundation $audit, ?ContactGroup $group = null)
@@ -71,7 +71,7 @@ class ContactWorkspaceController extends Controller
         if ($group) {
             $this->groupAccess($r, $group, true);
         }
-        $d = $r->validate(['name' => ['required', 'string', 'max:255', Rule::unique('contact_groups')->where('owner_id', $r->user()->id)->ignore($group?->id)], 'description' => 'nullable|string|max:2000', 'category' => 'required|string|max:40', 'active' => 'required|boolean']);
+        $d = $r->validate(['name' => ['required', 'string', 'max:255', Rule::unique('contact_groups')->where('owner_id', $group?->owner_id ?? $r->user()->id)->ignore($group?->id)], 'description' => 'nullable|string|max:2000', 'category' => 'required|string|max:40', 'active' => 'required|boolean']);
         DB::transaction(function () use ($r, $d, $group, $audit) {
             $g = $group ? ContactGroup::whereKey($group->id)->lockForUpdate()->firstOrFail() : new ContactGroup(['owner_id' => $r->user()->id]);
             $g->fill($d)->save();
@@ -136,7 +136,7 @@ class ContactWorkspaceController extends Controller
     {
         Gate::authorize('contacts.view');
 
-        return response()->view('contacts.contact', ['contact' => $contact->load(['consents', 'groups']), 'suppression' => DB::table('suppression_entries')->where('phone_e164', $contact->phone_e164)->first(), 'groups' => ContactGroup::where('owner_id', $r->user()->id)->orderBy('name')->get(), 'history' => DB::table('audit_logs')->where('entity_type', $contact->getMorphClass())->where('entity_id', $contact->id)->orderByDesc('id')->paginate(20)])->header('Cache-Control', 'private, no-store');
+        return response()->view('contacts.contact', ['contact' => $contact->load(['consents', 'groups']), 'suppression' => DB::table('suppression_entries')->where('phone_e164', $contact->phone_e164)->first(), 'groups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->orderBy('name')->get(), 'history' => DB::table('audit_logs')->where('entity_type', $contact->getMorphClass())->where('entity_id', $contact->id)->orderByDesc('id')->paginate(20)])->header('Cache-Control', 'private, no-store');
     }
 
     public function linkGroup(Request $r, Contact $contact, Foundation $audit)

@@ -1,42 +1,14 @@
 @extends('foundation.layout')
-@section('title', 'Audio library')
+@section('title','Audio library')
 @section('content')
-@php($statusLabels = ['approved' => 'Approved', 'pending' => 'Pending review', 'rejected' => 'Rejected'])
-<div class="page-heading">
-    <div><div class="eyebrow">MEDIA ASSETS</div><h1>Audio library</h1><p>Upload, preview, review, and deploy approved broadcast audio.</p></div>
-</div>
-@can('audio.manage')
-<section class="panel audio-upload-panel" aria-labelledby="new-audio-heading">
-    <div class="panel-heading"><div><h2 id="new-audio-heading">Upload audio</h2><p>Only 8 kHz mono, 16-bit PCM WAV files are accepted.</p></div></div>
-    <form class="audio-upload-form" method="post" enctype="multipart/form-data" action="{{ route('broadcast.audio.upload') }}">@csrf
-        <label>Audio name<input name="name" value="{{ old('name') }}" required maxlength="255" placeholder="e.g. Appointment reminder"></label>
-        <label>WAV file<input type="file" name="audio" accept="audio/wav,.wav" required></label>
-        <button class="button" type="submit">Validate and upload</button>
-    </form>
-</section>
+<div class="contact-heading"><div><h1>Audio library</h1><p>Upload a recording, listen to it, and approve or reject it. Approval makes linked draft campaigns Ready. Playback also requires the WAV to be installed on the PBX.</p></div>@can('audio.manage')<a class="button" href="#upload-audio">＋ Upload new audio</a>@endcan</div>
+<nav class="module-tabs" aria-label="Audio status">@foreach([''=>'All audio','pending'=>'Pending','approved'=>'Approved','rejected'=>'Rejected'] as $value=>$label)<a href="{{ route('audio.index',['status'=>$value]) }}" @if(request('status','')===$value) aria-current="page" @endif>{{ $label }}</a>@endforeach</nav>
+<section><div class="table-scroll audio-library-table"><table><thead><tr><th>Recording</th><th>Status</th><th>Preview</th><th>Actions</th></tr></thead><tbody>@forelse($audio as $asset)<tr id="audio-{{ $asset->id }}"><td><strong>{{ $asset->name }}</strong><small class="block">{{ number_format($asset->duration,1) }} seconds · {{ $asset->created_at?->format('d M Y') }}</small>@if($asset->rejection_reason)<small class="block danger-text">{{ $asset->rejection_reason }}</small>@endif</td><td><span class="pill {{ $asset->status==='approved'?'good':($asset->status==='rejected'?'warn':'neutral') }}">{{ ucfirst($asset->status) }}</span><small class="block">{{ $asset->deployed_at?'PBX installed':'PBX installation not recorded' }}</small></td><td><audio controls preload="none" aria-label="Preview {{ $asset->name }}" src="{{ route('audio.preview',$asset) }}">Download the recording to listen.</audio></td><td><div class="audio-actions"><a class="button secondary" href="{{ route('broadcast.audio.download',$asset) }}">Download</a>
+@can('audio.approve')@if($asset->status==='pending'&&($asset->uploaded_by!==auth()->id()||auth()->user()->isSuperAdministrator()))<form method="post" action="{{ route('broadcast.audio.approve',$asset) }}">@csrf<button>Approve audio</button></form><details><summary>Reject</summary><form method="post" action="{{ route('broadcast.audio.reject',$asset) }}">@csrf<label>Reason<input name="reason" required maxlength="2000"></label><button class="destructive">Reject audio</button></form></details>@endif
 @endcan
-<section class="panel" aria-labelledby="library-heading">
-    <div class="panel-heading"><div><h2 id="library-heading">Audio files</h2><p>{{ $audio->total() }} {{ Str::plural('audio file', $audio->total()) }} available to your role.</p></div></div>
-    @if($audio->isEmpty())
-        <div class="empty-state"><strong>No audio files yet.</strong><p>Upload a validated WAV file to begin the review process.</p></div>
-    @else
-        <div class="audio-table-wrap"><table class="audio-table"><thead><tr><th scope="col">Audio</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col">Uploaded</th><th scope="col">Preview</th><th scope="col">Actions</th></tr></thead><tbody>
-        @foreach($audio as $asset)
-            @php($status = strtolower($asset->status ?? 'pending'))
-            <tr>
-                <td><strong>{{ $asset->name }}</strong><small class="audio-meta">{{ $asset->deployed_at ? 'PBX deployment recorded' : 'Not deployed' }}</small></td>
-                <td><span class="pill {{ $status === 'approved' ? 'good' : ($status === 'rejected' ? 'danger' : 'warn') }}">{{ $statusLabels[$status] ?? ucfirst($status) }}</span></td>
-                <td>{{ number_format((float) $asset->duration, 1) }}s</td>
-                <td>{{ optional($asset->created_at)->format('M j, Y') ?? '—' }}</td>
-                <td><audio controls preload="none" aria-label="Preview {{ $asset->name }}"><source src="{{ route('audio.preview', $asset) }}" type="audio/wav">Your browser does not support audio preview.</audio></td>
-                <td><div class="audio-actions"><a class="button secondary" href="{{ route('broadcast.audio.download', $asset) }}">Download</a>
-                @can('audio.approve')@if($status === 'pending' && ($asset->uploaded_by !== auth()->id() || auth()->user()->isSuperAdministrator()))<form method="post" action="{{ route('broadcast.audio.approve', $asset) }}">@csrf<button class="button" type="submit">Approve</button></form>@endif@endcan
-                @can('telephony.manage')@if($status === 'approved' && ! $asset->deployed_at)<details class="audio-deploy"><summary>Record deployment</summary><form method="post" action="{{ route('broadcast.audio.deploy', $asset) }}">@csrf<label>PBX SHA-256<input name="checksum" required pattern="[a-f0-9]{64}" aria-label="PBX SHA-256 for {{ $asset->name }}"></label><label>Evidence reference<input name="evidence" required maxlength="2000" aria-label="Deployment evidence for {{ $asset->name }}"></label><button class="button" type="submit">Save deployment</button></form></details>@endif@endcan
-                </div></td>
-            </tr>
-        @endforeach
-        </tbody></table></div>
-        <div class="pagination-wrap">{{ $audio->links() }}</div>
-    @endif
-</section>
+@can('audio.manage')@if($asset->status==='rejected'&&($asset->uploaded_by===auth()->id()||auth()->user()->isSuperAdministrator()))<form method="post" action="{{ route('broadcast.audio.resubmit',$asset) }}">@csrf<button>Resubmit for review</button></form>@endif
+@endcan
+@can('telephony.manage')@if($asset->status==='approved'&&!$asset->deployed_at)<details><summary>PBX installation</summary><p>Download this WAV, then copy it to the PBX Asterisk sounds directory as <code>gwosevo/{{ $asset->uuid }}.wav</code>. The usual directory is <code>/var/lib/asterisk/sounds</code>; confirm the PBX’s configured ASTDATADIR. Ensure Asterisk can read the file. On the PBX, run <code>sha256sum &lt;sounds-directory&gt;/gwosevo/{{ $asset->uuid }}.wav</code>, compare it with the expected checksum below, then record the result and installation path. AMI access alone cannot upload the file.</p><p><small class="mono">{{ $asset->uuid }}<br>{{ $asset->checksum }}</small></p><form method="post" action="{{ route('broadcast.audio.deploy',$asset) }}">@csrf<label>Installed file SHA-256<input name="checksum" required pattern="[a-f0-9]{64}"></label><label>Installation evidence<input name="evidence" required maxlength="2000"></label><button>Record installation</button></form></details>@endif
+@endcan</div></td></tr>@empty<tr><td colspan="4">No audio matches this status.</td></tr>@endforelse</tbody></table></div>{{ $audio->links() }}</section>
+@can('audio.manage')<section id="upload-audio"><h2>Create / upload audio</h2><form method="post" enctype="multipart/form-data" action="{{ route('broadcast.audio.upload') }}">@csrf<label>Recording name<input name="name" value="{{ old('name') }}" required maxlength="255"></label><label>Audio file<input type="file" name="audio" accept=".wav,audio/wav" required></label><button>Upload audio</button></form><p>Use 8 kHz mono, 16-bit PCM WAV, up to 10 MB / 10 minutes. New recordings are Pending until reviewed. Super Administrators may approve their own recordings.</p></section>@endcan
 @endsection

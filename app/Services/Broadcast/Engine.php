@@ -10,6 +10,7 @@ use App\Models\CampaignRun;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Models\User;
+use App\Services\Campaigns\Workspace;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -45,9 +46,9 @@ class Engine
     public function control(User $actor, Campaign $campaign, string $action, bool $allowOwnedCampaign = false): void
     {
         if ($action === 'emergency') {
-            Gate::forUser($actor)->authorize('broadcast.emergency');
+            abort_unless($actor->can('broadcast.emergency') || ($actor->can('campaigns.manage') && $campaign->owner_id === $actor->id), 403);
         } else {
-            abort_unless($allowOwnedCampaign || Gate::forUser($actor)->allows('broadcast.operate'), 403);
+            abort_unless(Gate::forUser($actor)->allows('broadcast.operate') || ($actor->can('campaigns.manage') && $campaign->owner_id === $actor->id), 403);
         }
         DB::transaction(function () use ($actor, $campaign, $action) {
             $this->mutex();
@@ -61,15 +62,22 @@ class Engine
                 }
                 $version = $campaign->versions()->latest('version')->first();
                 if ($campaign->status === 'ready') {
+                    $trunk = app(Workspace::class)->configuredTrunk();
+                    if (! $trunk) {
+                        $this->ready->fail('Set the configured trunk before starting.');
+                    }
+                    $config = $campaign->configuration;
+                    $config['trunk_id'] = $trunk->id;
+                    $campaign->configuration = $config;
                     $snapshot = $campaign->only(['uuid', 'name', 'purpose', 'type', 'timezone', 'configuration']);
                     $snapshot['broadcast'] = $this->ready->snapshot($campaign);
                     $version = $campaign->versions()->create([
                         'version' => ($campaign->versions()->max('version') ?? 0) + 1,
                         'snapshot' => $snapshot,
-                        'approved_by' => AudioFile::findOrFail($snapshot['broadcast']['audio_id'])->approved_by,
+                        'approved_by' => $actor->id,
                         'approved_at' => now(),
                     ]);
-                    app(Foundation::class)->audit($actor, 'campaign.launch_snapshot_created', $campaign, ['campaign_version_id' => $version->id, 'audio_approved_by' => $version->approved_by]);
+                    app(Foundation::class)->audit($actor, 'campaign.launch_snapshot_created', $campaign, ['campaign_version_id' => $version->id, 'audio_approved_by' => AudioFile::findOrFail($snapshot['broadcast']['audio_id'])->approved_by]);
                 }
                 $s = $version?->snapshot['broadcast'] ?? null;
                 if (! $s) {
@@ -85,15 +93,15 @@ class Engine
                 $campaign->priority = $s['priority'] ?? 1;
                 $campaign->status = $campaign->scheduled_at && CarbonImmutable::parse($campaign->scheduled_at)->isFuture() ? 'scheduled' : 'running';
             } elseif ($action === 'pause') {
-                if ($campaign->status !== 'running') {
-                    $this->ready->fail('Only running campaigns can be paused.');
+                if (! in_array($campaign->status, ['running', 'scheduled'], true)) {
+                    $this->ready->fail('Only running or scheduled campaigns can be paused.');
                 }
                 $campaign->status = 'paused';
             } elseif ($action === 'resume') {
                 if ($campaign->status !== 'paused' || $campaign->stop_requested) {
                     $this->ready->fail('This campaign cannot resume.');
                 }
-                $campaign->status = 'running';
+                $campaign->status = $campaign->scheduled_at && $campaign->scheduled_at->isFuture() ? 'scheduled' : 'running';
             } else {
                 if (! in_array($campaign->status, ['running', 'paused', 'scheduled'], true)) {
                     $this->ready->fail('Campaign has no active broadcast run.');
@@ -123,6 +131,7 @@ class Engine
         if ((clone $active)->count() >= $globalCap) {
             return null;
         }
+        Campaign::where('status', 'scheduled')->where('scheduled_at', '<=', now())->where('stop_requested', false)->update(['status' => 'running']);
         $campaigns = Campaign::where('status', 'running')->where('stop_requested', false)->orderBy('dispatch_score')->orderBy('last_dispatched_at')->orderBy('id')->get();
         foreach ($campaigns as $campaign) {
             $s = CampaignVersion::findOrFail($campaign->active_version_id)->snapshot['broadcast'];

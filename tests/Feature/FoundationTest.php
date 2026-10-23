@@ -105,7 +105,8 @@ class FoundationTest extends TestCase
 
         $ownCampaign = app(Foundation::class)->createCampaign($admin, ['name' => 'Administrator campaign', 'purpose' => 'Updates', 'type' => 'one_way']);
         $this->post("/campaigns/{$ownCampaign->id}/review", ['decision' => 'submit', 'reason' => 'Ready'])->assertRedirect();
-        $this->post("/campaigns/{$ownCampaign->id}/review", ['decision' => 'approve', 'reason' => 'Self approval'])->assertForbidden();
+        $this->post("/campaigns/{$ownCampaign->id}/review", ['decision' => 'approve', 'reason' => 'Self approval'])->assertRedirect();
+        $this->assertSame('approved', $ownCampaign->fresh()->status);
     }
 
     public function test_workspace_renders_and_audit_is_restricted(): void

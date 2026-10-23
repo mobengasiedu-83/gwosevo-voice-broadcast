@@ -68,7 +68,7 @@ class CampaignController extends Controller
             abort_if($campaign->archived_at || ! in_array($campaign->status, ['draft', 'ready'], true), 422, 'Only draft or ready campaigns can be edited. Duplicate a completed campaign for a new run.');
         }
 
-        return view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::where('owner_id', $r->user()->id)->where('active', true)->get()]);
+        return view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get()]);
     }
 
     public function save(Request $r, Workspace $w, ?Campaign $campaign = null)
@@ -81,6 +81,9 @@ class CampaignController extends Controller
     public function show(Request $r, Campaign $campaign, Workspace $w)
     {
         $w->access($r->user(), $campaign);
+        if ($r->expectsJson()) {
+            return response()->json(['status' => $campaign->status])->header('Cache-Control', 'private, no-store');
+        }
         $readiness = null;
         $snapshot = null;
         try {
@@ -91,8 +94,19 @@ class CampaignController extends Controller
             $readiness = ['A configured asset no longer exists.'];
         }
         $eligibility = $w->eligibility($campaign);
+        if ($eligibility['eligible'] === 0) {
+            $readiness[] = 'No eligible contacts. Review DND/suppression entries and the selected audience.';
+        }
+        $schedulePreview = $campaign->scheduled_at;
+        if (! $schedulePreview && ! empty($campaign->configuration['scheduled_at'])) {
+            try {
+                $schedulePreview = CarbonImmutable::parse($campaign->configuration['scheduled_at'], $campaign->configuration['timezone'] ?? $campaign->timezone);
+            } catch (\Throwable $e) {
+                $schedulePreview = null;
+            }
+        }
 
-        return response()->view('campaigns.show', ['campaign' => $campaign, 'readiness' => $readiness, 'snapshot' => $snapshot, 'eligibility' => $eligibility, 'versions' => $campaign->versions()->orderByDesc('version')->get(), 'reviews' => DB::table('campaign_reviews')->where('campaign_id', $campaign->id)->orderByDesc('id')->get(), 'run' => CampaignRun::where('campaign_id', $campaign->id)->first(), 'templates' => $w->templates($r->user())->where('owner_id', $r->user()->id)->latest('id')->limit(100)->get()])->header('Cache-Control', 'private, no-store');
+        return response()->view('campaigns.show', ['campaign' => $campaign, 'schedulePreview' => $schedulePreview, 'selectedAudio' => AudioFile::find($campaign->configuration['audio_id'] ?? null), 'readiness' => $readiness, 'snapshot' => $snapshot, 'eligibility' => $eligibility, 'versions' => $campaign->versions()->orderByDesc('version')->get(), 'reviews' => DB::table('campaign_reviews')->where('campaign_id', $campaign->id)->orderByDesc('id')->get(), 'run' => CampaignRun::where('campaign_id', $campaign->id)->first(), 'templates' => $w->templates($r->user())->when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->latest('id')->limit(100)->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function review(Request $r, Campaign $campaign, Workspace $w, Foundation $f)
@@ -112,7 +126,7 @@ class CampaignController extends Controller
         $d = $r->validate(['name' => 'required|string|max:255']);
         $c = $w->duplicate($r->user(), $campaign, $d['name']);
 
-        return redirect()->route('campaigns.edit', $c)->with('status', 'New draft created. A fresh approval is required before this execution can start.');
+        return redirect()->route('campaigns.edit', $c)->with('status', 'New campaign draft created. Save its audience/settings; approved audio makes it ready.');
     }
 
     public function archive(Request $r, Campaign $campaign, Workspace $w)
@@ -132,7 +146,7 @@ class CampaignController extends Controller
             $locked = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
             $mayOperate = $r->user()->can('broadcast.operate') || ($locked->owner_id === $r->user()->id && $r->user()->can('campaigns.manage'));
             if ($d['action'] === 'cancel' && in_array($locked->status, ['draft', 'ready', 'approved'])) {
-                Gate::authorize('broadcast.emergency');
+                abort_unless($r->user()->can('broadcast.emergency') || ($locked->owner_id === $r->user()->id && $r->user()->can('campaigns.manage')), 403);
                 $locked->update(['status' => 'cancelled', 'stop_requested' => true]);
             } else {
                 abort_unless($d['action'] === 'cancel' || $mayOperate, 403);

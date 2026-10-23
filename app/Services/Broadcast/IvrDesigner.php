@@ -124,7 +124,7 @@ class IvrDesigner
         DB::transaction(function () use ($actor, $flow) {
             app(Engine::class)->mutex();
             $flow = IvrFlow::whereKey($flow->id)->lockForUpdate()->firstOrFail();
-            abort_if($flow->owner_id === $actor->id, 403);
+            abort_if($flow->owner_id === $actor->id && ! $actor->isSuperAdministrator(), 403);
             if ($flow->status !== 'draft') {
                 app(Readiness::class)->fail('Only draft flows can be approved.');
             }$this->validate($flow->graph);

@@ -10,6 +10,6 @@ class AudioFile extends Model
 
     protected function casts(): array
     {
-        return ['approved_at' => 'datetime', 'deployed_at' => 'datetime', 'duration' => 'float'];
+        return ['approved_at' => 'datetime', 'deployed_at' => 'datetime', 'duration' => 'float', 'rejected_at' => 'datetime'];
     }
 }

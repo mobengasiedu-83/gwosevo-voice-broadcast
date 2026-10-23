@@ -57,6 +57,7 @@ class CampaignModuleTest extends TestCase
 
     private function ready(): Campaign
     {
+        config()->set('broadcasting_discovery.trunk', 'module-test');
         $t = TrunkProfile::create(['name' => 'module-test', 'caller_id' => '0596921082', 'max_channels' => 10, 'reserved_channels' => 2, 'safe_channels' => 5, 'max_cps' => 2, 'number_format' => 'national', 'active' => true, 'verified_at' => now(), 'verified_by' => $this->manager->id, 'evidence' => 'verified']);
         Storage::disk('local')->put('module.wav', 'fixture');
         $a = AudioFile::create(['uuid' => (string) Str::uuid(), 'name' => 'Module message', 'storage_key' => 'module.wav', 'checksum' => hash('sha256', 'fixture'), 'status' => 'approved', 'uploaded_by' => $this->manager->id, 'approved_by' => $this->approver->id, 'approved_at' => now(), 'deployed_at' => now()]);
@@ -125,6 +126,7 @@ class CampaignModuleTest extends TestCase
 
     public function test_audio_approval_moves_linked_draft_campaign_to_ready(): void
     {
+        config()->set('broadcasting_discovery.trunk', 'configured');
         $t = TrunkProfile::create(['name' => 'configured', 'caller_id' => '0596921082', 'max_channels' => 10, 'reserved_channels' => 2, 'safe_channels' => 5, 'max_cps' => 2, 'number_format' => 'national', 'active' => true, 'verified_at' => now(), 'verified_by' => $this->manager->id, 'evidence' => 'verified']);
         Storage::disk('local')->put('pending.wav', 'fixture');
         $audio = AudioFile::create(['uuid' => (string) Str::uuid(), 'name' => 'Pending message', 'storage_key' => 'pending.wav', 'checksum' => hash('sha256', 'fixture'), 'status' => 'pending', 'uploaded_by' => $this->manager->id]);
@@ -188,7 +190,7 @@ class CampaignModuleTest extends TestCase
         $c->update(['status' => 'scheduled', 'scheduled_at' => now()->addDay()]);
         $this->actingAs($this->operator)->get('/campaigns?view=scheduled')->assertOk()->assertSee('Schedule calendar');
         $this->get('/campaigns?view=allocation')->assertOk()->assertSee('relative scheduling shares');
-        $this->actingAs($this->manager)->post(route('campaigns.control', $c), ['action' => 'cancel', 'reason' => 'No'])->assertForbidden();
+        $this->actingAs($this->user('Campaign Manager'))->post(route('campaigns.control', $c), ['action' => 'cancel', 'reason' => 'No'])->assertForbidden();
         $this->actingAs($this->user('Super Administrator'))->post(route('campaigns.control', $c), ['action' => 'cancel', 'reason' => 'Withdrawn'])->assertRedirect();
         $this->assertSame('cancelled', $c->fresh()->status);
     }

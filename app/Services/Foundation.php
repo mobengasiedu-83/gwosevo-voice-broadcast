@@ -75,7 +75,7 @@ class Foundation
                 }
                 $status = 'pending_approval';
             } else {
-                abort_if($campaign->owner_id === $actor->id, 403, 'A different user must review the campaign.');
+                abort_if($campaign->owner_id === $actor->id && ! $actor->isSuperAdministrator(), 403, 'A different user must review the campaign.');
                 if ($campaign->status !== 'pending_approval') {
                     throw ValidationException::withMessages(['campaign' => 'Only pending campaigns can be reviewed.']);
                 }

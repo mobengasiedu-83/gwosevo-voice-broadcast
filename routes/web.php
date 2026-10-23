@@ -39,10 +39,14 @@ Route::middleware('auth')->prefix('broadcast')->name('broadcast.')->group(functi
     Route::post('/audio', [$c, 'upload'])->name('audio.upload');
     Route::get('/audio/{audio}', [$c, 'downloadAudio'])->name('audio.download');
     Route::post('/audio/{audio}/approve', [$c, 'approveAudio'])->name('audio.approve');
+    Route::post('/audio/{audio}/reject', [$c, 'rejectAudio'])->name('audio.reject');
+    Route::post('/audio/{audio}/resubmit', [$c, 'resubmitAudio'])->name('audio.resubmit');
     Route::post('/audio/{audio}/deploy', [$c, 'deployAudio'])->name('audio.deploy');
     Route::post('/trunks', [$c, 'trunk'])->name('trunk');
     Route::post('/trunks/{trunk}/disable', [$c, 'disableTrunk'])->name('trunk.disable');
 });
+
+Route::get('/telephony', [InteractiveController::class, 'telephony'])->middleware('auth')->name('telephony.index');
 
 Route::middleware('auth')->prefix('interactive')->name('interactive.')->group(function () {
     $c = InteractiveController::class;
