@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\Contact;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
+use App\Services\Campaigns\Workspace;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -49,22 +50,25 @@ class Readiness
         }
         $c = $campaign->configuration ?? [];
         Validator::make($c, [
-            'audio_id' => 'required|integer|exists:audio_files,id', 'trunk_id' => 'required|integer|exists:trunk_profiles,id',
+            'audio_id' => 'required|integer|exists:audio_files,id',
             'concurrency' => 'required|integer|min:1|max:100', 'cps' => 'required|numeric|gt:0|max:100',
             'window_start' => 'required|date_format:H:i', 'window_end' => 'required|date_format:H:i|after:window_start',
             'contact_ids' => 'required|array|min:1|max:10000', 'contact_ids.*' => 'required|integer|distinct|exists:contacts,id',
         ])->validate();
         $audio = AudioFile::findOrFail($c['audio_id']);
-        $trunk = TrunkProfile::findOrFail($c['trunk_id']);
+        $trunk = app(Workspace::class)->configuredTrunk();
+        if (! $trunk) {
+            $this->fail('The connection configured by VITALPBX_TRUNK_NAME has no trunk profile. Import it with php artisan broadcast:import-trunk, then verify its capacity in Telephony.');
+        }
         $this->audio($audio);
         $this->trunk($trunk);
         $configured = config('broadcasting_discovery.trunk');
         if (is_string($configured) && $configured !== '' && $trunk->name !== $configured) {
             $this->fail('Campaign must use the configured trunk.');
         }
-        $callerId = empty($c['caller_id']) ? $trunk->caller_id : $c['caller_id'];
-        if (! in_array($callerId, array_merge([$trunk->caller_id], $trunk->allowed_caller_ids ?? []), true)) {
-            $this->fail('Caller ID must be approved for this trunk.');
+        $callerId = empty($c['caller_id']) ? app(Workspace::class)->defaultCallerId($trunk) : $c['caller_id'];
+        if (! preg_match('/\A\+?[0-9]{3,15}\z/', $callerId ?? '')) {
+            $this->fail('Caller ID must contain 3–15 digits with an optional leading +.');
         }
         $policy = app(CampaignPolicy::class)->schedule($c);
         $ivr = null;
@@ -124,7 +128,7 @@ class Readiness
         if (is_string($configured) && $configured !== '' && $trunk->name !== $configured) {
             $this->fail('Campaign must use the configured trunk.');
         }
-        if ($audio->uuid !== $s['audio_uuid'] || $audio->checksum !== $s['checksum'] || $trunk->name !== $s['trunk_name'] || ! in_array($s['caller_id'], array_merge([$trunk->caller_id], $trunk->allowed_caller_ids ?? []), true) || $trunk->number_format !== $s['number_format']) {
+        if ($audio->uuid !== $s['audio_uuid'] || $audio->checksum !== $s['checksum'] || $trunk->name !== $s['trunk_name'] || ! preg_match('/\A\+?[0-9]{3,15}\z/', $s['caller_id'] ?? '') || $trunk->number_format !== $s['number_format']) {
             $this->fail('Approved assets changed; create a new campaign approval.');
         }
         if (! empty($s['ivr'])) {

@@ -19,7 +19,7 @@ Starting captures the audience/configuration in a new immutable launch snapshot 
 
 ## Configured trunk and caller ID
 
-New campaigns always resolve the exact `VITALPBX_TRUNK_NAME` profile. A missing, inactive or unverified configured profile never causes fallback to another trunk. The editor displays that configured profile even if verification is incomplete; Start remains subject to technical readiness. A posted alternate trunk ID cannot change the selected trunk. Caller IDs are chosen from, and validated against, the configured profile's default/approved numbers.
+Campaign readiness and launch, including older campaigns without a saved trunk ID, always resolve the exact `VITALPBX_TRUNK_NAME` profile. A missing, inactive or unverified configured profile never causes fallback to another trunk. The editor displays that configured profile even if verification is incomplete; Start remains subject to technical readiness. A posted alternate trunk ID cannot change the selected trunk. Leave the campaign caller ID empty to use VITALPBX_CALLER_ID (falling back to the configured profile default if absent), or enter another numeric caller ID. Overrides accept 3–15 digits with an optional leading +. Carrier acceptance remains external to the application. Caller ID is frozen at launch; later changes do not rewrite historical run snapshots. No campaign form requires a trunk ID.
 
 ## Audio library
 

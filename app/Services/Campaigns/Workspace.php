@@ -64,8 +64,8 @@ class Workspace
             if ($trunk) {
                 $config['trunk_id'] = $trunk->id;
             }
-            if ($trunk && ! empty($config['caller_id']) && ! in_array($config['caller_id'], array_merge([$trunk->caller_id], $trunk->allowed_caller_ids ?? []), true)) {
-                throw ValidationException::withMessages(['caller_id' => 'Choose a caller ID approved for the configured trunk.']);
+            if (! empty($config['caller_id']) && ! preg_match('/\A\+?[0-9]{3,15}\z/', $config['caller_id'])) {
+                throw ValidationException::withMessages(['caller_id' => 'Enter 3–15 digits with an optional leading +.']);
             }
             $ids = array_values(array_unique(array_filter(array_map('trim', explode(',', $data['contact_ids'] ?? '')), fn ($v) => $v !== '')));
             $config['explicit_contact_ids'] = $ids;
@@ -83,6 +83,11 @@ class Workspace
 
             return $c;
         });
+    }
+
+    public function defaultCallerId(?TrunkProfile $trunk = null): ?string
+    {
+        return config('broadcasting_discovery.caller_id') ?: ($trunk ?? $this->configuredTrunk())?->caller_id;
     }
 
     public function configuredTrunk(): ?TrunkProfile

@@ -251,6 +251,39 @@ class SimplifiedFlowTest extends TestCase
         $this->assertSame('running', $c->fresh()->status);
     }
 
+    public function test_legacy_campaign_without_trunk_uses_environment_connection_and_default_caller_id(): void
+    {
+        config()->set('broadcasting_discovery.caller_id', '0591111111');
+        $campaign = $this->campaign(['caller_id' => null]);
+        $this->approve();
+        $configuration = $campaign->fresh()->configuration;
+        unset($configuration['trunk_id']);
+        $campaign->update(['configuration' => $configuration]);
+        $snapshot = app(Readiness::class)->snapshot($campaign->fresh());
+        $this->assertSame('configured', $snapshot['trunk_name']);
+        $this->assertSame('0591111111', $snapshot['caller_id']);
+        $this->actingAs($this->admin)->get(route('campaigns.show', $campaign))->assertOk()
+            ->assertDontSee('The trunk id field is required.')->assertDontSee('Start is unavailable');
+        app(Engine::class)->control($this->manager, $campaign->fresh(), 'start');
+        $this->assertSame('configured', CampaignRun::firstOrFail()->snapshot['broadcast']['trunk_name']);
+        $this->assertSame('0591111111', CampaignRun::firstOrFail()->snapshot['broadcast']['caller_id']);
+    }
+
+    public function test_custom_caller_id_and_stale_trunk_are_resolved_without_a_trunk_selector(): void
+    {
+        $campaign = $this->campaign(['caller_id' => '0200000000']);
+        $this->approve();
+        $configuration = $campaign->fresh()->configuration;
+        $configuration['trunk_id'] = 999999;
+        $campaign->update(['configuration' => $configuration]);
+        $snapshot = app(Readiness::class)->snapshot($campaign->fresh());
+        $this->assertSame('configured', $snapshot['trunk_name']);
+        $this->assertSame('0200000000', $snapshot['caller_id']);
+        $this->actingAs($this->admin)->get(route('campaigns.edit', $campaign))->assertOk()
+            ->assertDontSee('name="trunk_id"', false)->assertSee('Default caller ID:');
+        $this->get('/broadcast')->assertOk()->assertDontSee('name="trunk_id"', false);
+    }
+
     public function test_exact_configured_trunk_never_falls_back_and_posted_trunk_is_ignored(): void
     {
         TrunkProfile::create(['name' => 'other', 'caller_id' => '0244215189', 'active' => true, 'verified_at' => now(), 'verified_by' => $this->admin->id]);

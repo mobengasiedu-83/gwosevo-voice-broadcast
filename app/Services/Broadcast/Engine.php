@@ -36,6 +36,11 @@ class Engine
             if ($campaign->archived_at || $campaign->status !== 'draft') {
                 $this->ready->fail('Only a draft can be configured.');
             }
+            $trunk = app(Workspace::class)->configuredTrunk();
+            if (! $trunk) {
+                $this->ready->fail('Set VITALPBX_TRUNK_NAME and import its connection profile first.');
+            }
+            $config['trunk_id'] = $trunk->id;
             $campaign->configuration = $config;
             $this->ready->snapshot($campaign);
             $campaign->save();

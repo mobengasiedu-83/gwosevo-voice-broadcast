@@ -639,7 +639,7 @@ class OneWayBroadcastTest extends TestCase
         $this->actingAs($this->manager)->post('/interactive/flows/'.$draft->id.'/approve')->assertForbidden();
     }
 
-    public function test_caller_ids_can_be_set_and_unapproved_campaign_caller_id_is_denied(): void
+    public function test_caller_ids_can_be_set_and_campaign_override_is_validated(): void
     {
         $campaign = $this->campaign();
         $trunk = TrunkProfile::firstOrFail();
@@ -649,8 +649,10 @@ class OneWayBroadcastTest extends TestCase
         $config = $campaign->configuration + ['caller_id' => '0244215189'];
         $this->engine->configure($this->manager, $draft, $config);
         $this->assertSame('0244215189', app(Readiness::class)->snapshot($draft->fresh())['caller_id']);
-        $this->expectException(ValidationException::class);
         $this->engine->configure($this->manager, $draft, array_replace($config, ['caller_id' => '0200000000']));
+        $this->assertSame('0200000000', app(Readiness::class)->snapshot($draft->fresh())['caller_id']);
+        $this->expectException(ValidationException::class);
+        $this->engine->configure($this->manager, $draft, array_replace($config, ['caller_id' => 'invalid-number']));
     }
 
     public function test_scheduled_campaign_waits_until_due_and_cancelled_campaign_does_not_activate(): void

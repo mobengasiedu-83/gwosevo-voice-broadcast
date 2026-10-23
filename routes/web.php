@@ -339,17 +339,17 @@ Route::middleware('auth')
         Route::get('/import-template', [$c, 'template'])
             ->name('import_template');
 
-        Route::get('/imports/{batch}', [$c, 'import'])
+        Route::get('/imports/{batch}', [$c, 'batch'])
             ->name('import');
 
         Route::post('/imports/{batch}/map', [$c, 'map'])
-            ->name('imports.map');
+            ->name('import.map');
 
         Route::post('/imports/{batch}/confirm', [$c, 'confirm'])
-            ->name('imports.confirm');
+            ->name('import.confirm');
 
         Route::get('/imports/{batch}/errors', [$c, 'errors'])
-            ->name('imports.errors');
+            ->name('import.errors');
 
         Route::get('/suppressions', [$c, 'suppressions'])
             ->name('suppressions');
