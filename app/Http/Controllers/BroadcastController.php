@@ -174,7 +174,11 @@ class BroadcastController extends Controller
         $started = (clone $query)->whereNotNull('playback_started_at')->count();
         $completed = (clone $query)->whereNotNull('playback_completed_at')->count();
 
-        return view('broadcast.report', compact('campaign', 'counts', 'terminal', 'answered', 'started', 'completed') + [
+        $audienceTotal = $ids->count();
+        $playbackRecipients = (clone $query)->whereNotNull('playback_completed_at')
+            ->distinct()->count('campaign_recipient_id');
+
+        return view('broadcast.report', compact('campaign', 'counts', 'terminal', 'answered', 'started', 'completed', 'audienceTotal', 'playbackRecipients') + [
             'recipients' => CampaignRecipient::where('campaign_id', $campaign->id)->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'),
             'responses' => DB::table('dtmf_responses')->whereIn('call_attempt_id', (clone $query)->select('id'))->selectRaw('node_id,digit,count(*) as total')->groupBy('node_id', 'digit')->get(), 'transfers' => (clone $query)->whereNotNull('transfer_started_at')->count(), 'transfer_success' => (clone $query)->whereNotNull('transfer_answered_at')->count(), 'optouts' => (clone $query)->whereNotNull('opted_out_at')->count(),
             'active' => (clone $query)->whereNull('ended_at')->count(),

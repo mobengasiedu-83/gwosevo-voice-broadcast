@@ -147,7 +147,7 @@ Importing a connection creates an inactive, unverified profile. Verify its actua
 - Configurable event retention and pruning.
 - Reconciliation tooling for uncertain outcomes using verified external records.
 
-Asterisk playback completion confirms that its playback application completed; it does not independently prove what a recipient heard. A campaign marked Completed can contain failed attempts—inspect its outcome report.
+Asterisk playback completion confirms that its playback application completed; it does not independently prove what a recipient heard. A campaign marked Completed can contain failed attempts. The report separately highlights zero, partial or all-recipient playback completion and counts unique recipients rather than retry attempts.
 
 ### Accounts and permissions
 
@@ -283,7 +283,7 @@ Defaults intentionally do not enable calling. URL mode requires an address reach
 | php artisan broadcast:reconcile --help | Verified external-record reconciliation options |
 | php artisan foundation:user --help | Interactive account provisioning |
 
-In URL mode, the current broadcast:status field approved_deployed_audio still counts local-PBX deployment records; zero in that field alone does not establish URL-playback failure. Check media configuration and actual playback events.
+broadcast:status reports media_mode, media_configuration_valid and ready_audio. Its audio readiness requirement follows the selected delivery mode: URL mode requires approved, present, checksum-valid media and valid base-URL configuration; PBX mode additionally requires a recorded local installation. approved_deployed_audio is retained as an informational local-installation count. Status success does not verify PBX-side HTTP retrieval, cache access or audible playback.
 
 The specialized broadcast:test-internal command places a real call and is currently restricted to extension 208 and audio ID 1. It is a diagnostic utility, not a campaign dispatcher. Discovery, status and health checks are distinct from a real call-and-audio acceptance test.
 
@@ -313,3 +313,5 @@ For live acceptance, use an explicitly selected test recipient and verify ringin
 - [Initial discovery records](docs/discovery/phase-1.md)
 
 Phase documents retain historical implementation and acceptance notes. For current caller ID, optional-consent and audio-delivery behavior, use this README and the current workflow/audio guides.
+
+Production work deferred until the move: [reminders](docs/reminder.md).

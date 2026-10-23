@@ -5,8 +5,11 @@ namespace App\Console\Commands;
 use App\Models\AudioFile;
 use App\Models\CallAttempt;
 use App\Models\TrunkProfile;
+use App\Services\Broadcast\MediaDelivery;
+use App\Services\Broadcast\Readiness;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class BroadcastStatus extends Command
 {
@@ -18,7 +21,28 @@ class BroadcastStatus extends Command
     {
         $g = DB::table('broadcast_gateway')->where('id', 1)->first();
         $healthy = $g && $g->healthy && $g->heartbeat_at && strtotime($g->heartbeat_at) >= time() - 15 && $g->snapshot_at && strtotime($g->snapshot_at) >= time() - 15;
+        $mode = config('voice_broadcast.media_mode', 'pbx');
+        $mediaConfigurationValid = in_array($mode, ['url', 'pbx'], true);
+        if ($mode === 'url') {
+            try {
+                app(MediaDelivery::class)->baseUrl();
+            } catch (ValidationException $e) {
+                $mediaConfigurationValid = false;
+            }
+        }
+        $readyAudio = 0;
+        if ($mediaConfigurationValid) {
+            foreach (AudioFile::where('status', 'approved')->cursor() as $audio) {
+                try {
+                    app(Readiness::class)->audio($audio);
+                    $readyAudio++;
+                } catch (ValidationException $e) {
+                    // A missing, changed or undeployed local asset is not ready.
+                }
+            }
+        }
         $status = [
+            'media_mode' => $mode, 'media_configuration_valid' => $mediaConfigurationValid, 'ready_audio' => $readyAudio,
             'dispatch_enabled' => (bool) config('voice_broadcast.enabled'), 'gateway_healthy' => (bool) $healthy,
             'emergency_stop' => (bool) ($g->emergency_stop ?? true), 'global_channels' => (int) config('voice_broadcast.global_channels'),
             'global_cps' => (float) config('voice_broadcast.global_cps'), 'reserved_channels' => DB::table('channel_reservations')->whereNull('released_at')->count(),
@@ -34,6 +58,6 @@ class BroadcastStatus extends Command
             }
         }
 
-        return $healthy && $status['dispatch_enabled'] && ! $status['emergency_stop'] && ! $status['uncertain_attempts'] && $status['global_channels'] > 0 && $status['global_cps'] > 0 && $status['active_verified_trunks'] > 0 && $status['approved_deployed_audio'] > 0 ? self::SUCCESS : self::FAILURE;
+        return $healthy && $status['dispatch_enabled'] && ! $status['emergency_stop'] && ! $status['uncertain_attempts'] && $status['global_channels'] > 0 && $status['global_cps'] > 0 && $status['active_verified_trunks'] > 0 && $status['media_configuration_valid'] && $status['ready_audio'] > 0 ? self::SUCCESS : self::FAILURE;
     }
 }

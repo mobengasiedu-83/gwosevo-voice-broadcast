@@ -25,6 +25,7 @@ use App\Services\Foundation;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -475,6 +476,50 @@ class OneWayBroadcastTest extends TestCase
         $ami = new RecordingAmi;
         $method->invoke($this->gateway, $ami);
         $this->assertCount(0, $ami->sent);
+    }
+
+    public function test_status_checks_audio_readiness_for_the_selected_delivery_mode(): void
+    {
+        $this->campaign();
+        $audio = AudioFile::firstOrFail();
+        $audio->update(['deployed_at' => null]);
+        $this->artisan('broadcast:status --json')->expectsOutputToContain('"ready_audio": 0')->assertExitCode(1);
+        config()->set('voice_broadcast.media_mode', 'url');
+        config()->set('voice_broadcast.media_base_url', 'https://voice.example.test/app');
+        $code = Artisan::call('broadcast:status', ['--json' => true]);
+        $status = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(0, $code);
+        $this->assertSame(0, $status['approved_deployed_audio']);
+        $this->assertSame(1, $status['ready_audio']);
+        $this->assertSame('url', $status['media_mode']);
+        config()->set('voice_broadcast.media_base_url', 'http://localhost');
+        $this->artisan('broadcast:status --json')->expectsOutputToContain('"media_configuration_valid": false')->assertExitCode(1);
+        config()->set('voice_broadcast.media_base_url', 'https://voice.example.test/app');
+        Storage::disk('local')->put($audio->storage_key, 'changed file');
+        $this->artisan('broadcast:status --json')->expectsOutputToContain('"ready_audio": 0')->assertExitCode(1);
+        Storage::disk('local')->delete($audio->storage_key);
+        $this->artisan('broadcast:status --json')->expectsOutputToContain('"ready_audio": 0')->assertExitCode(1);
+        $audio->update(['status' => 'pending']);
+        $this->artisan('broadcast:status --json')->expectsOutputToContain('"ready_audio": 0')->assertExitCode(1);
+    }
+
+    public function test_report_distinguishes_execution_end_from_unique_recipient_playback(): void
+    {
+        $campaign = $this->campaign(2);
+        $campaign->update(['status' => 'completed']);
+        $recipients = CampaignRecipient::where('campaign_id', $campaign->id)->get();
+        $failed = CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $recipients[0]->id, 'state' => 'terminal', 'outcome' => 'authorization_failed', 'ended_at' => now()]);
+        $url = route('broadcast.report', $campaign);
+        $this->actingAs($this->manager)->get($url)->assertOk()
+            ->assertSee('Execution ended — no playback completion recorded.')
+            ->assertSee('Recipients with completed playback: 0 of 2')->assertSee('authorization_failed');
+        $failed->update(['playback_completed_at' => now(), 'outcome' => 'completed']);
+        CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $recipients[0]->id, 'attempt_no' => 2, 'state' => 'terminal', 'outcome' => 'completed', 'playback_completed_at' => now(), 'ended_at' => now()]);
+        $this->get($url)->assertOk()->assertSee('Execution ended — partial playback completion.')
+            ->assertSee('Recipients with completed playback: 1 of 2');
+        CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $recipients[1]->id, 'state' => 'terminal', 'outcome' => 'completed', 'playback_completed_at' => now(), 'ended_at' => now()]);
+        $this->get($url)->assertOk()->assertSee('Execution ended — playback completion recorded for all recipients.')
+            ->assertSee('Recipients with completed playback: 2 of 2');
     }
 
     public function test_status_command_reports_fail_closed_and_enabled_readiness(): void
