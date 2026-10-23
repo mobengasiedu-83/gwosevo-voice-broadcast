@@ -71,3 +71,15 @@ echo "=== 12. BRING APPLICATION ONLINE ==="
 sudo -u gwosevo php artisan up
 
 echo "=== DEPLOYMENT COMPLETE ==="
+
+sudo -u gwosevo php artisan optimize
+sudo systemctl restart gwosevo-ami-gateway
+
+### Permissions
+
+cd /var/www/gwosevo-voice-broadcast
+sudo chown -R gwosevo:gwosevo .
+sudo find . -type d -exec chmod 755 {} \;
+sudo find . -type f -exec chmod 644 {} \;
+sudo chmod 600 .env
+sudo chmod -R u+rwX,go-rwx storage bootstrap/cache

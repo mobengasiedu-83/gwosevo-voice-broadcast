@@ -367,6 +367,6 @@ Route::middleware('auth')
         Route::post('/{contact}/save', [$c, 'updateContact'])
             ->name('save');
 
-        Route::post('/{contact}/link-group', [$c, 'membership'])
+        Route::post('/{contact}/link-group', [$c, 'linkGroup'])
             ->name('link_group');
     });

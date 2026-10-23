@@ -1,97 +1,315 @@
-Production installation: [Ubuntu server setup, Apache, database, workers and VitalPBX](docs/production-deployment.md).
+# GWO SEVO Voice Broadcast
 
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+GWO SEVO is a web application for managing outbound voice broadcast campaigns through VitalPBX/Asterisk. Teams can organize contacts, import spreadsheets, review recordings, select an outgoing caller ID, schedule campaigns, start or pause calling, and monitor call and playback outcomes from one operations console.
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The application manages campaign decisions and call admission. Its persistent AMI gateway instructs VitalPBX to dial through the configured PJSIP connection. VitalPBX handles SIP calls and audio playback. In application-hosted audio mode, recordings remain in GWO SEVO's private storage and VitalPBX retrieves them through protected call-specific URLs.
 
-## About Laravel
+## Typical workflow
 
-## Contacts & groups
+1. Create a contact group, or choose an existing group.
+2. Add contacts manually, add existing contacts to the group, or import CSV/Excel files.
+3. Upload a recording and listen to its preview.
+4. Create a campaign with a group, recording, caller ID choice, calling window and optional schedule.
+5. Approve the recording. Linked draft campaigns move to **Ready**.
+6. Open the campaign and resolve any launch requirements.
+7. Click **Start**. A campaign without a future schedule runs immediately; a future schedule is armed and displays a countdown.
+8. Monitor call attempts and playback results. Pause, resume or cancel as needed.
 
-Dedicated screens are available at `/contacts` and `/contacts/groups`. See [contacts, group management and imports](docs/contacts-and-groups.md).
+Ready indicates audio approval; it does not guarantee available PBX capacity or that calls have been placed. Running indicates an active execution; the call report supplies evidence of dialing, answering and playback completion.
 
-## Campaigns
+## Features
 
-Current workflow: [groups → contacts → audio approval → Ready → Start](docs/campaign-audio-workflow.md). The dedicated audio library is at `/audio`.
+### Operations dashboard
 
+- Overview of campaigns, calls, answer rates, hourly volume, upcoming schedules and operational notices.
+- Date, timezone and campaign filters for historical metrics.
+- Live call list with state/search filters, elapsed time and sanitized event timelines.
+- Authorized individual call-stop requests with audit reasons and gateway confirmation.
+- Agent and queue wallboard using PBX snapshots and events, including ready, busy, paused and offline memberships.
+- System health for database, Redis, storage, background workers, scheduler, gateway and channel-snapshot freshness.
+- Periodic refresh, stale-data indicators, pagination and role-scoped visibility.
+- Responsive shared navigation and persistent light/dark theme switching.
 
-Module 2 is available at `/campaigns`. See [campaign workflows and operations](docs/module-2-campaigns.md).
+The wallboard reports PBX queue memberships. It does not provision agents or replace the PBX's queue management.
 
-## Operations dashboard
+### Contacts and contact groups
 
-Module 1 is available at `/dashboard`. See [dashboard operations and validation](docs/module-1-dashboard.md).
+- Contact directory with name/phone search, group filters, suppression filters and consent-record filters.
+- Manual contact creation, detail editing, membership display and audit history.
+- Ghana phone normalization into E.164 format; phone numbers remain immutable in the contact editor.
+- Group creation, descriptions, categories, active/inactive status, search, sorting and member counts.
+- Add an existing contact from a group page, or select a group directly on the contact's detail page.
+- Remove contacts from a group without deleting the contact.
+- Idempotent membership operations: repeated additions do not create duplicate memberships.
+- Ownership checks for group management, with Super Administrator access across owners.
 
-## Voice broadcasting discovery
+Group changes do not rewrite already launched campaign audiences. Edit and save an unlaunched campaign to resolve its selected group membership again.
 
-Phase 1 commands, inventory, risk register, test plan and sign-off record are in
-[docs/discovery/phase-1.md](docs/discovery/phase-1.md).
-Run `php artisan vitalpbx:discover` for offline checks or add `--live` for AMI login/Ping.
-Populate the discovery keys in `.env.example` using verified carrier/PBX evidence.
-These checks do not place calls or enable broadcast dispatch.
+### CSV and Excel imports
 
-Phase 2 adds the authenticated workspace at `/workspace`. See
-[docs/phase-2-foundation.md](docs/phase-2-foundation.md) for account provisioning,
-permissions, approvals and validation.
+- CSV, XLS and XLSX uploads into an existing group.
+- Downloadable contact-import template.
+- Column mapping for phone numbers and optional names/sources.
+- Validation preview before explicit confirmation.
+- Restoration of missing national leading zeros for valid nine-digit Ghana numbers commonly produced by Excel.
+- Existing-contact linking, duplicate detection and invalid-row quarantine.
+- Private staging, import history, progress counts and downloadable row-error CSVs.
+- Queued processing in bounded chunks, with resumable work and duplicate-safe confirmation/job delivery.
+- Permission and group-status checks during processing.
+- Formula-cell rejection and spreadsheet-safe error exports.
 
-Phase 3 adds one-way broadcast operations at `/broadcast` and the persistent
-`broadcast:gateway` command. See [docs/phase-3-one-way-engine.md](docs/phase-3-one-way-engine.md)
-for PBX installation, capacity settings, recovery and acceptance status. Dispatch
-remains disabled until verified settings and PBX acceptance are in place.
+Current import limits are 10 MB, 10,000 contact rows and 50 columns. Excel imports read the first worksheet. Imports require a worker consuming the default queue.
 
-Phase 4 adds caller ID settings and the IVR builder at `/interactive`, plus
-approved campaign schedules, retry backoff, weighted admission and interactive
-reports. See [docs/phase-4-interactive.md](docs/phase-4-interactive.md).
+### DND, suppression and optional consent records
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Searchable suppression/DNC records with reasons and effective dates.
+- Immediate or future-effective exclusions.
+- DND checked when reserving a call and again immediately before sending it.
+- IVR opt-out actions that add the recipient to suppression.
+- Optional purpose-specific consent records, including source, basis, reference, grant date and withdrawal history.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+**Consent records are not required for calling. DND/suppression remains enforced.** Importing contacts does not remove their suppression entries.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### Audio library
 
-## Learning Laravel
+- Private WAV upload, validation and canonical PCM storage.
+- Browser preview and recording download.
+- Pending, Approved and Rejected states with status filters.
+- Approval, rejection reasons and resubmission controls.
+- Checksum verification to detect missing or changed recordings.
+- Linked draft campaigns automatically become Ready when their recording is approved.
+- Application-hosted URL delivery or the older local-PBX installation mode.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+The library accepts recordings; it is not a built-in general-purpose text-to-speech generator.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### Application-hosted audio
 
-## Laravel Sponsors
+With URL delivery enabled, each call receives access only to the approved recording assets in its frozen run snapshot. Access checks include the attempt token, audio identity, SHA-256, sent/unfinished call state and a bounded access lifetime. Missing, altered, unrelated or unauthorized audio returns an error.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+VitalPBX downloads the WAV when needed and may retain temporary media-cache files. Individual recordings do not need manual installation on the PBX. The PBX still needs the one-time URL-playback dialplan, HTTP media support, WAV support, a writable Asterisk cache directory and network access to the application.
 
-### Premium Partners
+Interactive prompts also support URL delivery. Generated IVR dialplans still require installation and deployment verification.
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+See [application-hosted audio setup](docs/application-hosted-audio.md).
 
-## Contributing
+### Campaign creation and lifecycle
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- One-way broadcast and interactive IVR campaign types.
+- Group-based audiences and advanced explicit contact-ID entry.
+- Default caller ID or a campaign-specific outgoing number.
+- Optional scheduling with timezone-aware countdowns.
+- Daily calling windows, concurrency, calls-per-second limits, priority and retry policy.
+- Start, pause, resume and cancel controls according to campaign state and permissions.
+- Immutable launch snapshots recording audience, audio checksum, caller ID, connection, schedule, limits and IVR assets.
+- Execution history and campaign run views.
+- Campaign duplication into a separate execution draft.
+- Versioned reusable templates that omit execution state, audience and launch schedule.
+- Archive and restore controls, with restrictions on active executions.
+- Priority/allocation views and weighted admission across running campaigns.
 
-## Code of Conduct
+All campaigns resolve the connection named by **VITALPBX_TRUNK_NAME**. Users do not select a trunk per campaign. Leaving caller ID blank uses **VITALPBX_CALLER_ID**, falling back to the configured profile default if absent. A campaign can specify another syntactically valid outgoing number; acceptance of that identity still depends on the PBX/carrier.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Launched snapshots remain unchanged when settings, group membership or default caller ID later change.
 
-## Security Vulnerabilities
+### Voice and IVR
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+- Versioned flow builder with editable JSON, node creation and visual connection previews.
+- Playback, digit input, conditions, confirmation, transfers, opt-out, retry prompts, timeout and end nodes.
+- Explicit timeout/invalid-input handling and graph limits of 30 nodes and 20 steps per path.
+- Rejection of loops, unreachable nodes, reserved identifiers and arbitrary transfer destinations.
+- Flow review, approval, cloning and immutable approved versions.
+- Generated Asterisk dialplan download and checksum-based deployment recording.
+- Allowlisted internal extension/queue transfers and availability checks.
+- Digit, opt-out and transfer outcome reporting.
 
-## License
+### Telephony and dispatch controls
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- Shared AMI/PJSIP connection configured through environment settings.
+- Environment-default import into a matching database connection profile.
+- Verified carrier channel limits, reserved ordinary-call capacity, safe broadcast capacity and CPS settings.
+- Global, connection and campaign admission limits.
+- Fresh gateway heartbeat and complete channel snapshots required for new calls.
+- Per-attempt authorization before origination and exact identifiers for call correlation.
+- Bounded retry/backoff policy and uncertain-call reconciliation.
+- Individual and global emergency controls scoped to identified broadcast calls.
+- Global emergency-stop reset without automatically restarting cancelled campaigns.
+
+Importing a connection creates an inactive, unverified profile. Verify its actual capacity in Telephony before calling. Global channel/CPS values of zero block dispatch even if a campaign is Running.
+
+### Reporting and audit
+
+- Per-campaign call reports with outcomes and attempt states.
+- Answer and playback-completion metrics.
+- Audience progress: pending, excluded and terminal recipients.
+- Interactive digit, opt-out and transfer summaries.
+- Run identifiers and immutable launch configuration history.
+- Audited campaign changes, approvals, controls, group membership, imports and telephony configuration.
+- Configurable event retention and pruning.
+- Reconciliation tooling for uncertain outcomes using verified external records.
+
+Asterisk playback completion confirms that its playback application completed; it does not independently prove what a recipient heard. A campaign marked Completed can contain failed attempts—inspect its outcome report.
+
+### Accounts and permissions
+
+Authenticated access uses role-based permissions and ownership checks. Seeded roles are:
+
+| Role | Main responsibilities |
+|---|---|
+| Super Administrator | Access across application permissions and owners, including approval exceptions |
+| Telephony Administrator | Connection capacity, caller identity settings and PBX deployment controls |
+| Campaign Manager | Contacts, groups, imports, audio uploads and owned campaign management |
+| Approver | Audio/campaign/IVR review according to granted permissions |
+| Operator | Campaign operations and permitted operational screens |
+| Analyst | Campaign/report access |
+| Auditor | Audit and permitted read access |
+
+Super Administrator access does not bypass media integrity, verified capacity, DND, immutable run history or exact call-ownership checks. User provisioning is available through an interactive Artisan command; a complete graphical user-administration module is not supplied.
+
+## Application architecture
+
+    Browser
+       |
+    Apache + PHP-FPM
+       |
+    Laravel application ---- MariaDB
+       |                         |
+       +---- Redis / Horizon ----+  Imports and health jobs
+       |
+       +---- Scheduler              Scheduled activation and maintenance
+       |
+       +---- Persistent AMI gateway ---- VitalPBX ---- Configured carrier ---- Recipient
+                                               |
+                                               +---- Protected WAV fetch from application
+
+The Laravel application is not a standalone SIP/RTP media engine. VitalPBX originates the carrier leg and plays the recording.
+
+## Screens
+
+| Address | Function |
+|---|---|
+| /dashboard | Operations overview |
+| /dashboard/live | Live calls |
+| /dashboard/wallboard | Agent/queue telemetry |
+| /dashboard/health | Infrastructure and gateway health |
+| /contacts | Contact directory |
+| /contacts/groups | Group management |
+| /contacts/imports | Imports and processing history |
+| /contacts/suppressions | DND/suppression |
+| /contacts/consents | Optional consent evidence |
+| /audio | Recording library and review |
+| /campaigns | Campaigns, scheduling and lifecycle |
+| /campaigns/runs | Campaign executions |
+| /broadcast | Broadcast operations and emergency controls |
+| /interactive | Voice/IVR design, review and deployment |
+| /telephony | Connection capacity, caller identity and transfer destinations |
+| /horizon | Authorized queue monitoring |
+
+Scheduling and Reports sidebar entries lead to implemented campaign schedule/run views. Unavailable sidebar modules are not complete standalone products: agent provisioning, external API integrations and graphical system administration are not implied by their labels.
+
+## Requirements and production installation
+
+- PHP 8.3 or a compatible newer version, Composer and required PHP extensions.
+- Laravel 12, Livewire 3, Spatie permissions and PhpSpreadsheet dependencies.
+- MariaDB/MySQL for production application data.
+- Redis and Laravel Horizon for queued jobs.
+- Apache with PHP-FPM, exposing only the public directory.
+- Ubuntu 24.04 is the documented production platform.
+- VitalPBX/Asterisk with suitable AMI permissions, PJSIP routing, verified carrier capacity and custom dialplan support.
+- Application storage and Asterisk media cache writable by their respective service accounts.
+
+The current screens use static assets in public/css and public/js; they do not require a Vite development server. Laravel's health endpoint is /up; it confirms application boot, not full PBX/worker readiness.
+
+Follow the [production installation guide](docs/production-deployment.md) for packages, file transfer, database creation/migration, environment settings, permissions, Apache/PHP-FPM, background services, backups and checks.
+
+For a fresh installation, the core application commands are:
+
+    composer install --no-dev --prefer-dist --optimize-autoloader
+    composer check-platform-reqs --no-dev
+    cp .env.example .env
+
+Configure .env before continuing:
+
+    php artisan key:generate
+    php artisan migrate --force
+    php artisan db:seed --class=RolesAndPermissionsSeeder --force
+    php artisan foundation:user admin@example.com --name="Administrator" --role="Super Administrator"
+    php artisan optimize
+
+For migration, preserve the existing APP_KEY, database and private recordings. Do not generate a new key or recreate existing users. Never commit .env, expose private storage, or use database-reset commands as a deployment step.
+
+### Required background services
+
+| Process | Command | Purpose |
+|---|---|---|
+| AMI gateway | php artisan broadcast:gateway | PBX telemetry, admission, origination and call events |
+| Horizon | php artisan horizon | Default import queue and dashboard-health jobs |
+| Scheduler | php artisan schedule:run every minute | Due campaigns, health probes and event pruning |
+
+Systemd templates are in [deploy/systemd](deploy/systemd). Use one scheduler mechanism and one gateway for the installation. Restart long-running processes after relevant code/configuration updates.
+
+### Important environment settings
+
+| Setting | Purpose |
+|---|---|
+| APP_ENV / APP_DEBUG / APP_URL | Production mode, error visibility and browser base URL |
+| DB_* / REDIS_* | Database and queue/cache connections |
+| QUEUE_CONNECTION=redis | Horizon-backed background processing |
+| VITALPBX_AMI_* | AMI host, port and credentials |
+| VITALPBX_TRUNK_NAME | Exact shared PJSIP connection name |
+| VITALPBX_CALLER_ID | Default outgoing caller ID |
+| VITALPBX_NUMBER_FORMAT | National, international or E.164 dialing |
+| VOICE_BROADCAST_ENABLED | Explicit live-dispatch switch |
+| VOICE_BROADCAST_GLOBAL_CHANNELS | Maximum simultaneous broadcast reservations |
+| VOICE_BROADCAST_GLOBAL_CPS | Global call-start rate |
+| VOICE_BROADCAST_MEDIA_MODE | url or pbx recording delivery |
+| VOICE_BROADCAST_MEDIA_BASE_URL | Application base URL reachable from VitalPBX |
+
+Defaults intentionally do not enable calling. URL mode requires an address reachable from the PBX; localhost on that server points back to the PBX. Rebuild configuration and restart the gateway after changing environment settings.
+
+## Operational commands
+
+| Command | Function |
+|---|---|
+| php artisan vitalpbx:discover | Offline discovery/configuration checks |
+| php artisan vitalpbx:discover --live | Adds AMI login/Ping checks |
+| php artisan vitalpbx:test | AMI connection test |
+| php artisan broadcast:import-trunk | Import configured connection defaults without inventing capacity |
+| php artisan broadcast:inventory | Broadcast inventory |
+| php artisan broadcast:status --json | Gateway, dispatch and capacity summary |
+| php artisan dashboard:probe | Immediate infrastructure probe |
+| php artisan horizon:status | Queue supervisor status |
+| php artisan schedule:list | Registered scheduled tasks |
+| php artisan broadcast:prune-events | Apply event-retention pruning |
+| php artisan broadcast:reconcile --help | Verified external-record reconciliation options |
+| php artisan foundation:user --help | Interactive account provisioning |
+
+In URL mode, the current broadcast:status field approved_deployed_audio still counts local-PBX deployment records; zero in that field alone does not establish URL-playback failure. Check media configuration and actual playback events.
+
+The specialized broadcast:test-internal command places a real call and is currently restricted to extension 208 and audio ID 1. It is a diagnostic utility, not a campaign dispatcher. Discovery, status and health checks are distinct from a real call-and-audio acceptance test.
+
+## Development and verification
+
+Install development dependencies before running automated checks:
+
+    composer install
+    php artisan test
+
+Tests cover permissions, ownership, contacts/imports, campaign lifecycle, configured connection resolution, caller identity, scheduling, admission, AMI events, DND, IVR and protected media delivery. Automated tests use their configured test database and fake media storage; they do not establish that a production carrier or RTP path works.
+
+For live acceptance, use an explicitly selected test recipient and verify ringing, audible media and the application's call/playback outcomes. Keep credentials and call-specific media tokens out of shared logs.
+
+## Documentation
+
+- [Current campaign and audio workflow](docs/campaign-audio-workflow.md)
+- [Contacts, groups and imports](docs/contacts-and-groups.md)
+- [Dashboard and operational health](docs/module-1-dashboard.md)
+- [Campaign module details](docs/module-2-campaigns.md)
+- [Protected application-hosted audio](docs/application-hosted-audio.md)
+- [Ubuntu/Apache production deployment](docs/production-deployment.md)
+- [PBX telemetry troubleshooting](docs/pbx-telemetry-troubleshooting.md)
+- [Foundation implementation](docs/phase-2-foundation.md)
+- [One-way engine implementation](docs/phase-3-one-way-engine.md)
+- [Interactive/IVR implementation](docs/phase-4-interactive.md)
+- [Initial discovery records](docs/discovery/phase-1.md)
+
+Phase documents retain historical implementation and acceptance notes. For current caller ID, optional-consent and audio-delivery behavior, use this README and the current workflow/audio guides.

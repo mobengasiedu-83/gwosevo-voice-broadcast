@@ -37,6 +37,28 @@ class ContactsWorkspaceTest extends TestCase
         $this->group = ContactGroup::create(['name' => 'Customer surveys', 'owner_id' => $this->manager->id, 'description' => 'Survey audience', 'category' => 'Surveys']);
     }
 
+    public function test_contact_detail_adds_selected_group_without_membership_form_fields(): void
+    {
+        $contact = app(Foundation::class)->createContact($this->manager, ['name' => 'New contact', 'phone' => '0241234567', 'source' => 'Manual']);
+        $this->actingAs($this->manager);
+        $response = $this->get(route('contacts.show', $contact))->assertOk();
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+        $form = $xpath->query('//form[.//select[@name="group_id"]]')->item(0);
+        $this->assertNotNull($form);
+        $this->post($form->getAttribute('action'), ['group_id' => $this->group->id])
+            ->assertRedirect()->assertSessionHasNoErrors()->assertSessionHas('status', 'Contact added to group.');
+        $this->assertTrue($this->group->contacts()->whereKey($contact->id)->exists());
+        $this->post(route('contacts.link_group', $contact), ['group_id' => $this->group->id])->assertSessionHasNoErrors();
+        $this->assertSame(1, $this->group->contacts()->count());
+        $foreign = ContactGroup::create(['name' => 'Other owner', 'owner_id' => $this->user('Campaign Manager')->id]);
+        $this->post(route('contacts.link_group', $contact), ['group_id' => $foreign->id])->assertForbidden();
+        $this->assertSame(0, $foreign->contacts()->count());
+        $this->post(route('contacts.link_group', $contact), [])->assertSessionHasErrors('group_id');
+        $this->actingAs(User::factory()->create())->post(route('contacts.link_group', $contact), ['group_id' => $this->group->id])->assertForbidden();
+    }
+
     private function user(string $role): User
     {
         $u = User::factory()->create();
