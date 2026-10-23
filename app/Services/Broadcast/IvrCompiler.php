@@ -11,18 +11,20 @@ class IvrCompiler
         $verified = app(IvrDesigner::class)->validate($flow->graph);
         $context = 'gwosevo-ivr-'.str_replace('-', '', $flow->uuid);
         $out = '; GWO SEVO immutable IVR '.$flow->uuid.' SHA256 '.$flow->checksum."\n[{$context}]\n";
-        $base = file_get_contents(base_path('deploy/asterisk/gwosevo-broadcast.conf'));
+        $remote = app(MediaDelivery::class)->remote();
+        $base = file_get_contents(base_path($remote ? 'deploy/asterisk/gwosevo-broadcast-url.conf' : 'deploy/asterisk/gwosevo-broadcast.conf'));
         $start = strpos($base, 'exten => s,1,');
         $end = strpos($base, ' same => n,UserEvent(VBPlaybackStart');
         $auth = substr($base, $start, $end - $start);
         // Interactive flows validate all referenced recordings, not just the opening recording.
-        foreach ($verified['assets'] as $asset) {
+        foreach ($remote ? [] : $verified['assets'] as $asset) {
             $auth .= ' same => n,GotoIf($["${DB(vb-audio/'.$asset['uuid'].')}" != "'.$asset['checksum'].'"]?failed)'."\n";
             $auth .= ' same => n,GotoIf($[${STAT(e,${ASTDATADIR}/sounds/gwosevo/'.$asset['uuid'].'.wav)} != 1]?failed)'."\n";
         }
         $out .= $auth.' same => n,Goto('.$flow->graph['start'].",1)\n";
         $out .= ' same => n(failed),UserEvent(VBPlaybackFailed,AttemptID:${VB_ATTEMPT_ID})'."\n same => n,Hangup()\n same => n(denied),Hangup(21)\n";
         $assets = array_column($verified['assets'], null, 'id');
+        $media = fn ($id) => $remote ? '${VB_MEDIA_PREFIX}/'.$assets[$id]['uuid'].'/'.$assets[$id]['checksum'].'.wav' : 'gwosevo/'.$assets[$id]['uuid'];
         $routes = array_column($verified['routes'], null, 'id');
         foreach ($flow->graph['nodes'] as $n) {
             $id = $n['id'];
@@ -30,13 +32,13 @@ class IvrCompiler
             $type = $n['type'];
             if (in_array($type, ['playback', 'retry_prompt'], true)) {
                 $out .= ' same => n,UserEvent(VBPlaybackStart,AttemptID:${VB_ATTEMPT_ID},NodeID:'.$id.")\n";
-                $out .= ' same => n,Playback(gwosevo/'.$assets[$n['audio_id']]['uuid'].")\n";
+                $out .= ' same => n,Playback('.$media($n['audio_id']).")\n";
                 $out .= ' same => n,GotoIf($["${PLAYBACKSTATUS}" != "SUCCESS"]?s,failed)'."\n";
                 $out .= ' same => n,UserEvent(VBPromptComplete,AttemptID:${VB_ATTEMPT_ID},NodeID:'.$id.")\n";
             }
             if (in_array($type, ['input', 'confirmation', 'condition'], true)) {
                 if ($type !== 'condition') {
-                    $out .= ' same => n,Read(VB_DIGIT,gwosevo/'.$assets[$n['audio_id']]['uuid'].',1,e,1,'.($n['timeout_seconds'] ?? 5).")\n";
+                    $out .= ' same => n,Read(VB_DIGIT,'.$media($n['audio_id']).',1,e,1,'.($n['timeout_seconds'] ?? 5).")\n";
                 }
                 if ($type !== 'condition') {
                     $out .= ' same => n,GotoIf($["${READSTATUS}" = "ERROR"]?s,failed)'."\n";

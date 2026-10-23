@@ -266,8 +266,8 @@ class Gateway
                 return;
             }
             $phone = DialNumber::format($recipient->phone_e164, $s['number_format']);
-            // Consent withdrawal, suppression, pause and stop share this mutex through the final write.
-            $ami->send(['Action' => 'Originate', 'ActionID' => $a->action_id, 'Channel' => 'PJSIP/'.$phone.'@'.$s['trunk_name'], 'ChannelId' => $a->uuid, 'Context' => $s['ivr']['context'] ?? config('voice_broadcast.context'), 'Exten' => 's', 'Priority' => 1, 'Async' => 'true', 'CallerID' => $s['caller_id'], 'Timeout' => 30000, 'Variable' => ['__VB_ATTEMPT_ID='.$a->uuid, '__VB_TOKEN='.$a->token, '__VB_AUDIO_ID='.$s['audio_uuid'], '__VB_CHECKSUM='.$s['checksum']]]);
+            // DND/suppression, pause and stop share this mutex through the final write.
+            $ami->send(['Action' => 'Originate', 'ActionID' => $a->action_id, 'Channel' => 'PJSIP/'.$phone.'@'.$s['trunk_name'], 'ChannelId' => $a->uuid, 'Context' => $s['ivr']['context'] ?? (app(MediaDelivery::class)->remote() ? 'gwosevo-broadcast-url' : config('voice_broadcast.context')), 'Exten' => 's', 'Priority' => 1, 'Async' => 'true', 'CallerID' => $s['caller_id'], 'Timeout' => 30000, 'Variable' => ['__VB_ATTEMPT_ID='.$a->uuid, '__VB_TOKEN='.$a->token, '__VB_AUDIO_ID='.$s['audio_uuid'], '__VB_CHECKSUM='.$s['checksum'], '__VB_MEDIA_PREFIX='.(app(MediaDelivery::class)->remote() ? app(MediaDelivery::class)->prefix($a) : '')]]);
             // Charge actual socket writes as well as intents so delayed writes cannot create a CPS burst.
             DB::table('broadcast_gateway')->where('id', 1)->update(['next_send_at' => microtime(true) + 1 / (float) config('voice_broadcast.global_cps')]);
             $trunk = TrunkProfile::findOrFail($s['trunk_id']);

@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\AudioFile;
+use App\Models\CallAttempt;
 use App\Models\Campaign;
+use App\Models\CampaignRecipient;
 use App\Models\CampaignRun;
 use App\Models\Contact;
 use App\Models\ContactGroup;
@@ -13,6 +15,7 @@ use App\Models\User;
 use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\CampaignPolicy;
 use App\Services\Broadcast\Engine;
+use App\Services\Broadcast\Readiness;
 use App\Services\Campaigns\Workspace;
 use App\Services\Foundation;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -127,14 +130,58 @@ class SimplifiedFlowTest extends TestCase
         $this->assertDatabaseCount('campaign_runs', 0);
     }
 
-    public function test_campaign_page_explains_zero_eligible_audience_even_when_audio_is_installed(): void
+    public function test_contacts_without_consent_are_eligible_when_not_suppressed(): void
     {
         $campaign = $this->campaign();
         $this->approve();
         DB::table('contact_consents')->delete();
         $this->actingAs($this->admin)->get(route('campaigns.show', $campaign))->assertOk()
-            ->assertSee('No eligible contacts.')->assertSee('Review consent evidence')
-            ->assertSee('Start is unavailable');
+            ->assertDontSee('No eligible contacts.')->assertDontSee('Review consent evidence')
+            ->assertDontSee('Start is unavailable');
+        $this->assertSame(1, app(Workspace::class)->eligibility($campaign->fresh())['eligible']);
+        $contact = Contact::firstOrFail();
+        $this->assertNull(app(Readiness::class)->exclusion($contact->id, $contact->phone_e164, $campaign->purpose));
+        $this->assertDatabaseCount('campaign_runs', 0);
+    }
+
+    public function test_url_media_is_call_scoped_checksum_verified_and_expires(): void
+    {
+        config()->set('voice_broadcast.media_mode', 'url');
+        config()->set('voice_broadcast.media_base_url', 'https://voice.example.test/dialer');
+        $campaign = $this->campaign();
+        app(AudioLibrary::class)->approve($this->admin, $this->audio);
+        app(Engine::class)->control($this->manager, $campaign->fresh(), 'start', 'URL playback test');
+        $version = $campaign->versions()->firstOrFail();
+        $call = CallAttempt::create([
+            'uuid' => (string) Str::uuid(), 'token' => str_repeat('a', 64),
+            'campaign_version_id' => $version->id, 'state' => 'sending', 'sent_at' => now(),
+            'action_id' => (string) Str::uuid(),
+            'campaign_recipient_id' => CampaignRecipient::where('campaign_id', $campaign->id)->firstOrFail()->id,
+        ]);
+        $url = '/pbx-media/'.$call->uuid.'/'.$call->token.'/'.$this->audio->uuid.'/'.$this->audio->checksum.'.wav';
+        $this->assertNull($this->audio->fresh()->deployed_at);
+        $this->get($url)->assertOk()->assertHeader('Content-Type', 'audio/wav');
+        $this->get(str_replace($call->token, str_repeat('b', 64), $url))->assertNotFound();
+        $this->get(str_replace($this->audio->checksum, str_repeat('0', 64), $url))->assertNotFound();
+        $this->get(str_replace($this->audio->uuid, (string) Str::uuid(), $url))->assertNotFound();
+        Storage::disk('local')->put('message.wav', 'tampered');
+        $this->get($url)->assertNotFound();
+        $call->update(['ended_at' => now()]);
+        $this->get($url)->assertNotFound();
+        $call->update(['ended_at' => null, 'sent_at' => now()->subMinutes(16)]);
+        $this->get($url)->assertNotFound();
+        $call->update(['sent_at' => null]);
+        $this->get($url)->assertNotFound();
+    }
+
+    public function test_url_media_requires_a_pbx_reachable_base_url(): void
+    {
+        config()->set('voice_broadcast.media_mode', 'url');
+        config()->set('voice_broadcast.media_base_url', 'https://localhost');
+        $campaign = $this->campaign();
+        app(AudioLibrary::class)->approve($this->admin, $this->audio);
+        $this->actingAs($this->admin)->get(route('campaigns.show', $campaign))->assertOk()
+            ->assertSee('VOICE_BROADCAST_MEDIA_BASE_URL')->assertSee('Start is unavailable');
         $this->assertDatabaseCount('campaign_runs', 0);
     }
 

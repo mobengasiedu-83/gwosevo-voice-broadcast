@@ -28,7 +28,9 @@ class Readiness
         if (! $audio->checksum || ! Storage::disk('local')->exists($audio->storage_key ?? '') || ! hash_equals($audio->checksum, hash_file('sha256', Storage::disk('local')->path($audio->storage_key)))) {
             $this->fail('The audio file is missing or its checksum has changed. Upload and approve a new recording.');
         }
-        if (! $audio->deployed_at) {
+        if (app(MediaDelivery::class)->remote()) {
+            app(MediaDelivery::class)->baseUrl();
+        } elseif (! $audio->deployed_at) {
             $this->fail('Audio is approved, but PBX installation has not been recorded. Open the Audio Library, install the WAV on the PBX, then record its verified installation.');
         }
     }
@@ -81,7 +83,7 @@ class Readiness
         }
 
         return [
-            'audio_id' => $audio->id, 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
+            'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
             'trunk_name' => $trunk->name, 'caller_id' => $callerId, 'number_format' => $trunk->number_format,
             'concurrency' => (int) $c['concurrency'], 'cps' => (float) $c['cps'], 'timezone' => $policy['timezone'], 'scheduled_at' => $policy['scheduled_at'], 'priority' => $policy['priority'], 'ivr' => $ivr,
             'window_start' => $c['window_start'], 'window_end' => $c['window_end'], 'purpose' => $campaign->purpose,
@@ -106,12 +108,14 @@ class Readiness
             return 'suppressed';
         }
 
-
         return null;
     }
 
     public function liveAssets(array $s): void
     {
+        if (($s['media_mode'] ?? 'pbx') !== config('voice_broadcast.media_mode', 'pbx')) {
+            $this->fail('Audio delivery mode changed. Create a new campaign execution.');
+        }
         $audio = AudioFile::findOrFail($s['audio_id']);
         $trunk = TrunkProfile::findOrFail($s['trunk_id']);
         $this->audio($audio);

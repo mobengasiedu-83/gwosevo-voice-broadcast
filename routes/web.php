@@ -6,8 +6,13 @@ use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FoundationController;
 use App\Http\Controllers\InteractiveController;
+use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\SessionController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/pbx-media/{attempt}/{token}/{audio}/{checksum}.wav', PbxMediaController::class)
+    ->whereUuid('attempt')->whereUuid('audio')->where('token', '[a-f0-9]{64}')->where('checksum', '[a-f0-9]{64}')
+    ->name('pbx.media');
 
 Route::get('/', fn () => view('welcome'));
 Route::middleware('guest')->group(function () {

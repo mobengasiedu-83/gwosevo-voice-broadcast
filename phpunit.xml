@@ -18,6 +18,7 @@
         </include>
     </source>
     <php>
+        <env name="VOICE_BROADCAST_MEDIA_MODE" value="pbx"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

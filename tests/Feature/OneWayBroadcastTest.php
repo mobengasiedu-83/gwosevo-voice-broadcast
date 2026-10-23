@@ -176,6 +176,18 @@ class OneWayBroadcastTest extends TestCase
         app(EventProcessor::class)->ingest(['Event' => $name, 'Uniqueid' => $a->uuid, 'Channel' => 'PJSIP/approved-trunk-00000001'] + $extra);
     }
 
+    public function test_url_mode_originates_with_call_scoped_media_prefix(): void
+    {
+        config()->set('voice_broadcast.media_mode', 'url');
+        config()->set('voice_broadcast.media_base_url', 'https://voice.example.test/app');
+        $campaign = $this->campaign();
+        $attempt = $this->reserve();
+        $ami = $this->send($attempt);
+        $this->assertSame('gwosevo-broadcast-url', $ami->sent[0]['Context']);
+        $this->assertContains('__VB_MEDIA_PREFIX=https://voice.example.test/app/pbx-media/'.$attempt->uuid.'/'.$attempt->token, $ami->sent[0]['Variable']);
+        $this->assertSame('url', $campaign->versions()->firstOrFail()->snapshot['broadcast']['media_mode']);
+    }
+
     public function test_full_one_way_call_and_deduplicated_milestones(): void
     {
         $campaign = $this->campaign();
@@ -197,17 +209,17 @@ class OneWayBroadcastTest extends TestCase
         $this->assertDatabaseCount('call_events', 5);
     }
 
-    public function test_consent_is_checked_at_reservation_and_again_before_send(): void
+    public function test_dnd_is_checked_at_reservation_and_again_before_send(): void
     {
         $campaign = $this->campaign(2);
         $first = CampaignRecipient::where('campaign_id', $campaign->id)->first();
         DB::table('suppression_entries')->insert(['phone_e164' => $first->phone_e164, 'reason' => 'Opted out', 'created_by' => $this->manager->id, 'effective_at' => now()]);
         $a = $this->reserve();
         $this->assertSame('excluded', $first->fresh()->status);
-        DB::table('contact_consents')->where('contact_id', CampaignRecipient::find($a->campaign_recipient_id)->contact_id)->update(['revoked_at' => now()]);
+        DB::table('suppression_entries')->insert(['phone_e164' => CampaignRecipient::find($a->campaign_recipient_id)->phone_e164, 'reason' => 'Opted out after reservation', 'created_by' => $this->manager->id, 'effective_at' => now()]);
         $ami = $this->send($a);
         $this->assertCount(0, $ami->sent);
-        $this->assertSame('no_consent', $a->fresh()->outcome);
+        $this->assertSame('suppressed', $a->fresh()->outcome);
     }
 
     public function test_admission_enforces_global_cap_campaign_cap_and_reserved_channels(): void
@@ -547,6 +559,19 @@ class OneWayBroadcastTest extends TestCase
         return [$campaign->fresh(), $flow->fresh()];
     }
 
+    public function test_url_mode_ivr_prompts_use_protected_media_without_local_file_checks(): void
+    {
+        config()->set('voice_broadcast.media_mode', 'url');
+        config()->set('voice_broadcast.media_base_url', 'https://voice.example.test/app');
+        [$campaign, $flow] = $this->interactiveFixture();
+        $compiled = app(IvrCompiler::class)->compile($flow);
+        $this->assertStringContainsString('DB_DELETE(vb-auth/', $compiled);
+        $this->assertStringContainsString('Read(VB_DIGIT,${VB_MEDIA_PREFIX}/', $compiled);
+        $this->assertStringNotContainsString('STAT(e,', $compiled);
+        $this->assertStringNotContainsString('DB(vb-audio/', $compiled);
+        $this->assertStringContainsString('.wav,1,e,1,5)', $compiled);
+    }
+
     public function test_interactive_flow_compilation_and_gateway_context(): void
     {
         [$campaign,$flow] = $this->interactiveFixture();
@@ -643,7 +668,7 @@ class OneWayBroadcastTest extends TestCase
         $this->assertSame('scheduled', $campaign->fresh()->status);
     }
 
-    public function test_retry_backoff_is_bounded_and_rechecks_consent(): void
+    public function test_retry_backoff_is_bounded_and_rechecks_eligibility(): void
     {
         $campaign = $this->campaign(1, 'international', 'approved-trunk', ['max_attempts' => 2, 'retry_delay_seconds' => 60]);
         $first = $this->reserve();
@@ -692,7 +717,7 @@ class OneWayBroadcastTest extends TestCase
     {
         [$campaign,$flow] = $this->interactiveFixture();
         $telephony = $this->user('Telephony Administrator');
-        $this->actingAs($telephony)->get('/interactive')->assertOk()->assertSee('Outbound caller IDs');
+        $this->actingAs($telephony)->get('/telephony')->assertOk()->assertSee('Outbound caller IDs');
         $this->post('/interactive/flows/'.$flow->id.'/deploy', ['checksum' => str_repeat('0', 64), 'evidence' => 'PBX test'])->assertSessionHasErrors('broadcast');
         $checksum = hash('sha256', app(IvrCompiler::class)->compile($flow));
         $this->post('/interactive/flows/'.$flow->id.'/deploy', ['checksum' => $checksum, 'evidence' => 'PBX test'])->assertRedirect();
@@ -733,7 +758,7 @@ class OneWayBroadcastTest extends TestCase
         $this->assertFalse($trunk->active);
         $this->assertNull($trunk->verified_at);
         $this->assertSame(0, $trunk->max_channels);
-        $this->actingAs($this->user('Telephony Administrator'))->get('/interactive')->assertOk()->assertSee('0596921082')->assertSee('Verify or update capacity');
+        $this->actingAs($this->user('Telephony Administrator'))->get('/telephony')->assertOk()->assertSee('0596921082')->assertSee('Verify or update capacity');
     }
 
     public function test_trunk_capacity_requires_telephony_permission_and_valid_reservations(): void

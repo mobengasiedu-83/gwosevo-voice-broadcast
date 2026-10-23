@@ -11,7 +11,7 @@ This flow supersedes the earlier separate campaign-review step for new campaigns
 
 ## Ready and schedules
 
-Ready means the selected recording is approved. It does not claim that the WAV is installed on the PBX, that capacity is available, or that recipients have consent. Launch still validates installed/checksummed media, the verified configured trunk, caller ID, audience and calling policy. Dispatch continues to enforce fresh PBX telemetry, global/trunk limits, windows, consent and suppression.
+Ready means the selected recording is approved. It does not claim that the WAV is installed on the PBX, that capacity is available, or that recipients are eligible. Launch still validates installed/checksummed media, the verified configured trunk, caller ID, audience and calling policy. Dispatch continues to enforce fresh PBX telemetry, global/trunk limits, windows and DND/suppression.
 
 Start without a future schedule creates a run and sets it Running immediately; actual call admission remains subject to those checks. For a future schedule, **Start schedule** arms the execution and starts its countdown. Merely approving audio or viewing the countdown does not place calls. The countdown distinguishes unarmed and armed schedules; when due, it reports that the execution awaits dispatch. The gateway can activate due schedules during admission, and the existing scheduler command provides a periodic fallback. The page refreshes status automatically without interrupting focused form inputs.
 
@@ -38,7 +38,7 @@ The existing **Super Administrator** role now grants every application permissio
 
 Normal roles retain their permission and ownership limits. Non-super reviewers cannot approve their own audio or IVR. Campaign owners with campaign-management permission may operate/cancel their own campaigns; other users need the operational permissions. Global emergency controls remain separately authorized.
 
-Super Administrator access does not make invalid media valid, alter immutable historical snapshots, invent consent/deployment evidence, activate unverified capacity, or bypass exact channel ownership checks.
+Super Administrator access does not make invalid media valid, alter immutable historical snapshots, invent deployment evidence, activate unverified capacity, or bypass exact channel ownership checks.
 
 ## Deployment and verification
 
@@ -47,3 +47,7 @@ Run `php artisan migrate --force` for audio rejection metadata. Restart long-run
 **110 tests passed, 545 assertions.** Blade compilation, JavaScript syntax checks and PHP formatting checks passed.
 
 Tests cover approval-to-Ready transitions, self approval exceptions, cross-owner administration, audio rejection/resubmission, preview range requests, owner controls, scheduled activation/countdowns, exact trunk resolution and media integrity. The audio library and campaign controls are also reviewed using an isolated local preview.
+
+Consent evidence is optional record keeping and is no longer a dialing prerequisite. Contacts are eligible unless changed/deleted or on the effective DND/suppression list. DND is enforced at reservation and rechecked before sending. Historical no_consent outcomes remain unchanged.
+
+For protected application-hosted playback without copying individual recordings to VitalPBX, see [application-hosted audio](application-hosted-audio.md). Audio deployment checks apply only to local PBX media mode; URL mode validates the reachable-base configuration and serves frozen call assets through a protected endpoint.
