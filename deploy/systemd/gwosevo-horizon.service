@@ -1,0 +1,26 @@
+[Unit]
+Description=GWO SEVO Redis queue workers (Horizon)
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gwosevo
+Group=gwosevo
+WorkingDirectory=/var/www/gwosevo-voice-broadcast
+ExecStart=/usr/bin/php artisan horizon
+Restart=always
+RestartSec=5
+TimeoutStopSec=300
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/gwosevo-voice-broadcast/storage /var/www/gwosevo-voice-broadcast/bootstrap/cache
+UMask=0007
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
