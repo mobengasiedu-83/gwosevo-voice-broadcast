@@ -1,76 +1,47 @@
 cd /var/www/gwosevo-voice-broadcast
 
-# Stop immediately if a command fails
-
 set -e
 
-echo "=== 1. VERIFY DEPLOYMENT ==="
-
-git status
-git branch --show-current
-
-# Require the expected branch and a clean working tree
-
-test "$(git branch --show-current)" = "main"
-test -z "$(git status --porcelain)"
-
-echo "=== 2. FETCH LATEST CODE ==="
-
-git fetch origin main
-
-echo "=== 3. ENABLE MAINTENANCE MODE ==="
-
-sudo -u gwosevo php artisan down
-
-echo "=== 4. UPDATE APPLICATION ==="
-
-git merge --ff-only origin/main
-
-echo "=== 5. VERIFY COMPOSER OWNERSHIP ==="
-
-sudo chown -R gwosevo:gwosevo vendor
-
-echo "=== 6. INSTALL PHP DEPENDENCIES ==="
-
+echo "=== INSTALL DEPENDENCIES ==="
 sudo -u gwosevo composer install \
  --no-dev \
  --prefer-dist \
  --no-interaction \
  --optimize-autoloader
 
-echo "=== 7. RUN DATABASE MIGRATIONS ==="
-
+echo "=== RUN DATABASE MIGRATIONS ==="
 sudo -u gwosevo php artisan migrate --force
 
-echo "=== 8. CLEAR OLD LARAVEL CACHES ==="
-
+echo "=== CLEAR OLD CACHES ==="
 sudo -u gwosevo php artisan optimize:clear
 
-echo "=== 9. REBUILD PRODUCTION CACHES ==="
-
+echo "=== REBUILD PRODUCTION CACHES ==="
 sudo -u gwosevo php artisan config:cache
-
 sudo -u gwosevo php artisan route:cache
-
 sudo -u gwosevo php artisan view:cache
 
-echo "=== 10. RESTART QUEUE WORKERS ==="
-
+echo "=== RESTART QUEUE WORKERS ==="
 sudo -u gwosevo php artisan queue:restart
 
-echo "=== 11. VERIFY APPLICATION ==="
-
+echo "=== VERIFY APPLICATION ==="
 sudo -u gwosevo php artisan about --only=environment
 
-sudo -u gwosevo php artisan route:list --path=pbx-media
-
-sudo -u gwosevo php artisan route:list --path=internal-test-media
-
-echo "=== 12. BRING APPLICATION ONLINE ==="
-
+echo "=== ENSURE APPLICATION IS ONLINE ==="
 sudo -u gwosevo php artisan up
 
-echo "=== DEPLOYMENT COMPLETE ==="
+echo "=== UPDATE COMPLETED ==="
+
+cd /var/www/gwosevo-voice-broadcast
+
+echo "=== APPLICATION HEALTH ==="
+curl -s -o /dev/null -w "HTTP %{http_code}\n" \
+ http://173.16.254.253:85/up
+
+echo "=== BROADCAST STATUS ==="
+sudo -u gwosevo php artisan broadcast:status
+
+echo "=== RECENT ERRORS ==="
+sudo tail -n 30 storage/logs/laravel.log
 
 sudo -u gwosevo php artisan optimize
 sudo systemctl restart gwosevo-ami-gateway
