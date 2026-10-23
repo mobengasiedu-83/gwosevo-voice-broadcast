@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ClientOwned;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class Contact extends Model
 {
+    use ClientOwned;
+
     protected $guarded = ['id'];
 
     protected static function booted(): void

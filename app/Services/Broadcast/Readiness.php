@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Services\Campaigns\Workspace;
+use App\Services\Clients\AccountContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -60,6 +61,7 @@ class Readiness
         if (! $trunk) {
             $this->fail('The connection configured by VITALPBX_TRUNK_NAME has no trunk profile. Import it with php artisan broadcast:import-trunk, then verify its capacity in Telephony.');
         }
+        app(AccountContext::class)->sameAccount($campaign, $audio);
         $this->audio($audio);
         $this->trunk($trunk);
         $configured = config('broadcasting_discovery.trunk');
@@ -77,7 +79,18 @@ class Readiness
             if (! $flow) {
                 $this->fail('Select an approved deployed IVR flow.');
             }
+            app(AccountContext::class)->sameAccount($campaign, $flow);
             $ivr = app(IvrDesigner::class)->snapshot($flow);
+        }
+        $audienceQuery = Contact::whereIn('id', $c['contact_ids']);
+        if ((clone $audienceQuery)->where(function ($query) use ($campaign) {
+            if ($campaign->client_account_id === null) {
+                $query->whereNotNull('client_account_id');
+            } else {
+                $query->whereNull('client_account_id')->orWhere('client_account_id', '!=', $campaign->client_account_id);
+            }
+        })->exists()) {
+            $this->fail('Audience must belong to the campaign client account.');
         }
         $targets = Contact::whereIn('id', $c['contact_ids'])->orderBy('id')->get(['id', 'phone_e164'])->toArray();
         foreach ($targets as $target) {

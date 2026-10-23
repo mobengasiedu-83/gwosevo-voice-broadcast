@@ -8,6 +8,7 @@ use App\Models\ContactConsent;
 use App\Models\ContactGroup;
 use App\Models\ContactImport;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\AccountContext;
 use App\Services\Contacts\ImportReader;
 use App\Services\Contacts\Imports;
 use App\Services\Contacts\Suppression;
@@ -96,6 +97,7 @@ class ContactWorkspaceController extends Controller
         $d = $r->validate(['contact_id' => 'required|integer|exists:contacts,id', 'action' => 'required|in:add,remove']);
         DB::transaction(function () use ($r, $group, $d, $audit) {
             $g = ContactGroup::whereKey($group->id)->lockForUpdate()->firstOrFail();
+            app(AccountContext::class)->sameAccount($g, Contact::findOrFail($d['contact_id']));
             if ($d['action'] === 'add') {
                 $g->contacts()->syncWithoutDetaching([$d['contact_id']]);
             } else {
@@ -147,6 +149,7 @@ class ContactWorkspaceController extends Controller
         $this->groupAccess($r, $group, true);
         DB::transaction(function () use ($r, $contact, $group, $audit) {
             $g = ContactGroup::whereKey($group->id)->lockForUpdate()->firstOrFail();
+            app(AccountContext::class)->sameAccount($g, $contact);
             $g->contacts()->syncWithoutDetaching([$contact->id]);
             $audit->audit($r->user(), 'contact.grouped', $contact, ['group_id' => $g->id]);
         });

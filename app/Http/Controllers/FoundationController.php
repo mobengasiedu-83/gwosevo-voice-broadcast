@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\ContactConsent;
 use App\Models\ContactGroup;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\AccountContext;
 use App\Services\Contacts\Suppression;
 use App\Services\Foundation;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -104,6 +105,7 @@ class FoundationController extends Controller
         $data = $request->validate(['name' => 'required|string|max:255']);
         DB::transaction(function () use ($request, $contact, $data, $service) {
             $group = ContactGroup::firstOrCreate(['owner_id' => $request->user()->id, 'name' => $data['name']]);
+            app(AccountContext::class)->sameAccount($group, $contact);
             $contact->groups()->syncWithoutDetaching([$group->id]);
             $service->audit($request->user(), 'contact.grouped', $contact, ['group_id' => $group->id]);
         });

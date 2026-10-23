@@ -11,6 +11,7 @@ use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Models\User;
 use App\Services\Campaigns\Workspace;
+use App\Services\Clients\Accounts;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -60,6 +61,9 @@ class Engine
             $campaign = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
             if (! in_array($action, ['start', 'pause', 'resume', 'emergency'], true)) {
                 $this->ready->fail('Invalid control.');
+            }
+            if (in_array($action, ['start', 'resume'], true) && ! app(Accounts::class)->campaignActive($campaign)) {
+                $this->ready->fail('Client account is suspended.');
             }
             if ($action === 'start') {
                 if ($campaign->archived_at || ! in_array($campaign->status, ['ready', 'approved'], true)) {
@@ -139,6 +143,9 @@ class Engine
         Campaign::where('status', 'scheduled')->where('scheduled_at', '<=', now())->where('stop_requested', false)->update(['status' => 'running']);
         $campaigns = Campaign::where('status', 'running')->where('stop_requested', false)->orderBy('dispatch_score')->orderBy('last_dispatched_at')->orderBy('id')->get();
         foreach ($campaigns as $campaign) {
+            if (! app(Accounts::class)->campaignActive($campaign)) {
+                continue;
+            }
             $s = CampaignVersion::findOrFail($campaign->active_version_id)->snapshot['broadcast'];
             if (! $this->ready->inWindow($s)) {
                 continue;

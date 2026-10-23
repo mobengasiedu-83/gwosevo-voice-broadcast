@@ -10,6 +10,7 @@ use App\Models\ContactGroup;
 use App\Models\TrunkProfile;
 use App\Models\User;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\AccountContext;
 use App\Services\Foundation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -71,6 +72,7 @@ class Workspace
             $config['explicit_contact_ids'] = $ids;
             if (! empty($data['source_group_id'])) {
                 $group = ContactGroup::when(! $u->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $u->id))->where('active', true)->findOrFail($data['source_group_id']);
+                app(AccountContext::class)->sameAccount($c, $group);
                 $ids = array_values(array_unique(array_merge($ids, $group->contacts()->pluck('contacts.id')->map(fn ($id) => (string) $id)->all())));
             }
             Validator::make(['ids' => $ids], ['ids' => 'array|max:10000', 'ids.*' => 'integer|distinct|exists:contacts,id'])->validate();

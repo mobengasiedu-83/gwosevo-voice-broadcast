@@ -6,6 +6,7 @@ use App\Models\AudioFile;
 use App\Models\IvrFlow;
 use App\Models\TransferRoute;
 use App\Models\User;
+use App\Services\Clients\AccountContext;
 use App\Services\Foundation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -118,6 +119,16 @@ class IvrDesigner
         });
     }
 
+    private function validateOwnership(IvrFlow $flow): array
+    {
+        $verified = $this->validate($flow->graph);
+        foreach ($verified['assets'] as $asset) {
+            app(AccountContext::class)->sameAccount($flow, AudioFile::findOrFail($asset['id']));
+        }
+
+        return $verified;
+    }
+
     public function approve(User $actor, IvrFlow $flow): void
     {
         Gate::forUser($actor)->authorize('campaigns.approve');
@@ -127,7 +138,7 @@ class IvrDesigner
             abort_if($flow->owner_id === $actor->id && ! $actor->isSuperAdministrator(), 403);
             if ($flow->status !== 'draft') {
                 app(Readiness::class)->fail('Only draft flows can be approved.');
-            }$this->validate($flow->graph);
+            }$this->validateOwnership($flow);
             $flow->update(['status' => 'approved', 'approved_by' => $actor->id, 'approved_at' => now()]);
             app(Foundation::class)->audit($actor, 'ivr.approved', $flow);
         });
@@ -139,6 +150,6 @@ class IvrDesigner
             app(Readiness::class)->fail('An approved deployed IVR version is required.');
         }
 
-        return ['id' => $flow->id, 'uuid' => $flow->uuid, 'checksum' => $flow->checksum, 'graph' => $flow->graph, 'context' => 'gwosevo-ivr-'.str_replace('-', '', $flow->uuid)] + $this->validate($flow->graph);
+        return ['id' => $flow->id, 'uuid' => $flow->uuid, 'checksum' => $flow->checksum, 'graph' => $flow->graph, 'context' => 'gwosevo-ivr-'.str_replace('-', '', $flow->uuid)] + $this->validateOwnership($flow);
     }
 }

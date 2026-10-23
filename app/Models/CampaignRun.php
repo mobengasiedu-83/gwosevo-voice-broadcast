@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ClientChild;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 
 class CampaignRun extends Model
 {
+    use ClientChild;
+
     public $timestamps = false;
 
     protected $guarded = ['id'];

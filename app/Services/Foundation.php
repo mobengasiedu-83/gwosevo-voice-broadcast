@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\Campaign;
+use App\Models\ClientAccount;
 use App\Models\Contact;
 use App\Models\User;
 use App\Services\Broadcast\Engine;
@@ -16,7 +17,7 @@ class Foundation
 {
     public function audit(User $actor, string $action, $entity, array $details = []): void
     {
-        AuditLog::create(['actor_id' => $actor->id, 'action' => $action, 'entity_type' => $entity->getMorphClass(), 'entity_id' => $entity->id, 'details' => $details, 'created_at' => now()]);
+        AuditLog::create(['actor_id' => $actor->id, 'action' => $action, 'entity_type' => $entity->getMorphClass(), 'entity_id' => $entity->id, 'client_account_id' => $entity instanceof ClientAccount ? $entity->id : $entity->client_account_id, 'details' => $details, 'created_at' => now()]);
     }
 
     public function createContact(User $actor, array $data): Contact

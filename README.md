@@ -162,6 +162,7 @@ Authenticated access uses role-based permissions and ownership checks. Seeded ro
 | Operator | Campaign operations and permitted operational screens |
 | Analyst | Campaign/report access |
 | Auditor | Audit and permitted read access |
+| Client | Account-scoped identity; internal operations denied, client portal deferred |
 
 Super Administrator access does not bypass media integrity, verified capacity, DND, immutable run history or exact call-ownership checks. User provisioning is available through an interactive Artisan command; a complete graphical user-administration module is not supplied.
 
@@ -315,3 +316,7 @@ For live acceptance, use an explicitly selected test recipient and verify ringin
 Phase documents retain historical implementation and acceptance notes. For current caller ID, optional-consent and audio-delivery behavior, use this README and the current workflow/audio guides.
 
 Production work deferred until the move: [reminders](docs/reminder.md).
+
+## Client account foundation
+
+Step 02 adds internal client organization management, account-user links, data isolation and suspension controls. See [client account foundation](docs/step-02-client-foundation.md). Internal administrators manage accounts at /client-accounts; provision new client users with client:user. Client registration/OTP, password onboarding and the operational client portal remain later stages.

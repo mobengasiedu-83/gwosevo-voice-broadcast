@@ -19,7 +19,16 @@ class SessionController extends Controller
         if (! Auth::attempt($data)) {
             throw ValidationException::withMessages(['email' => 'The supplied credentials are invalid.']);
         }
+        if (Auth::user()->isClient() && ! Auth::user()->clientAccountActive()) {
+            Auth::logout();
+            throw ValidationException::withMessages(['email' => 'The supplied credentials are invalid or the account is unavailable.']);
+        }
         $request->session()->regenerate();
+        if (Auth::user()->isClient()) {
+            $request->session()->forget('url.intended');
+
+            return redirect()->route('client.foundation');
+        }
 
         return redirect()->intended('/dashboard');
     }

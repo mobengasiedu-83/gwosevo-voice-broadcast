@@ -12,6 +12,13 @@ use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\SessionController;
 use Illuminate\Support\Facades\Route;
 
+Route::middleware('auth')->group(function () {
+    Route::get('/client', [\App\Http\Controllers\ClientAccountController::class, 'foundation'])->name('client.foundation');
+    Route::get('/client-accounts', [\App\Http\Controllers\ClientAccountController::class, 'index'])->name('clients.accounts');
+    Route::post('/client-accounts', [\App\Http\Controllers\ClientAccountController::class, 'store'])->name('clients.accounts.store');
+    Route::post('/client-accounts/{account}/status', [\App\Http\Controllers\ClientAccountController::class, 'status'])->name('clients.accounts.status');
+});
+
 /*
 |--------------------------------------------------------------------------
 | PBX Media Delivery

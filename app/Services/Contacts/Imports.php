@@ -7,6 +7,8 @@ use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\ContactImport;
 use App\Models\User;
+use App\Services\Broadcast\Engine;
+use App\Services\Clients\AccountContext;
 use App\Services\Foundation;
 use App\Services\GhanaPhone;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +21,7 @@ class Imports
     public function access(User $u, ContactImport $batch): void
     {
         Gate::forUser($u)->authorize('contacts.manage');
+        app(AccountContext::class)->assertOwned($u, $batch);
         abort_unless($batch->owner_id === $u->id || $u->isSuperAdministrator(), 403);
     }
 
@@ -56,7 +59,7 @@ class Imports
             $seen = [];
             $invalid = 0;
             $duplicates = 0;
-            $existing = Contact::whereNotNull('phone_e164')->pluck('phone_e164')->flip();
+            $existing = Contact::where('account_scope', $b->client_account_id === null ? 'internal' : 'client:'.$b->client_account_id)->whereNotNull('phone_e164')->pluck('phone_e164')->flip();
             foreach (DB::table('contact_import_rows')->where('contact_import_id', $b->id)->orderBy('id')->cursor() as $row) {
                 $raw = json_decode($row->raw, true);
                 $phone = null;
@@ -98,13 +101,14 @@ class Imports
     public function process(int $id): void
     {
         DB::transaction(function () use ($id) {
+            app(Engine::class)->mutex();
             $b = ContactImport::whereKey($id)->lockForUpdate()->firstOrFail();
             if (! in_array($b->status, ['queued', 'processing'])) {
                 return;
             }
             $u = User::findOrFail($b->owner_id);
             $group = ContactGroup::whereKey($b->contact_group_id)->lockForUpdate()->firstOrFail();
-            if (! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
+            if (($b->client_account_id !== null && ! app(AccountContext::class)->active((int) $b->client_account_id)) || $b->client_account_id !== $group->client_account_id || ! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
                 $b->update(['status' => 'blocked']);
 
                 return;
@@ -113,7 +117,7 @@ class Imports
             $rows = DB::table('contact_import_rows')->where('contact_import_id', $id)->whereNull('committed_at')->whereIn('state', ['valid', 'existing'])->orderBy('id')->limit(250)->get();
             $new = 0;
             foreach ($rows as $r) {
-                $c = Contact::firstOrCreate(['phone_e164' => $r->phone_e164], ['uuid' => (string) Str::uuid(), 'name' => $r->name, 'source' => $r->source, 'source_phone' => $r->phone_e164, 'created_by' => $u->id]);
+                $c = Contact::firstOrCreate(['account_scope' => $b->client_account_id === null ? 'internal' : 'client:'.$b->client_account_id, 'phone_e164' => $r->phone_e164], ['uuid' => (string) Str::uuid(), 'name' => $r->name, 'source' => $r->source, 'source_phone' => $r->phone_e164, 'created_by' => $u->id, 'client_account_id' => $b->client_account_id]);
                 $group->contacts()->syncWithoutDetaching([$c->id]);
                 $created = $c->wasRecentlyCreated;
                 DB::table('contact_import_rows')->where('id', $r->id)->update(['state' => $created ? 'imported' : 'linked', 'committed_at' => now()]);

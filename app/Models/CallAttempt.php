@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ClientChild;
 use Illuminate\Database\Eloquent\Model;
 
 class CallAttempt extends Model
 {
+    use ClientChild;
+
     protected $guarded = ['id'];
 
     protected $hidden = ['token'];

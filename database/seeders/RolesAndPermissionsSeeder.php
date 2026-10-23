@@ -11,9 +11,11 @@ class RolesAndPermissionsSeeder extends Seeder
 {
     public function run(): void
     {
+        Role::findOrCreate('Client', 'web')->syncPermissions([]);
+        Permission::findOrCreate('clients.manage', 'web');
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $matrix = [
-            'Super Administrator' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
+            'Super Administrator' => ['clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
             'Telephony Administrator' => ['telephony.view', 'telephony.manage'],
             'Campaign Manager' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage'],
             'Approver' => ['campaigns.view', 'campaigns.approve', 'audio.approve'],
