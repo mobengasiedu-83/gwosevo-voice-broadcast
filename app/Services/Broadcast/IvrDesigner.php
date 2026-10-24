@@ -104,6 +104,7 @@ class IvrDesigner
     public function save(User $actor, string $name, array $graph, ?IvrFlow $source = null): IvrFlow
     {
         Gate::forUser($actor)->authorize('campaigns.manage');
+        $graph['telemetry_version'] = 2;
         $this->validate($graph);
 
         return DB::transaction(function () use ($actor, $name, $graph, $source) {

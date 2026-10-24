@@ -104,13 +104,18 @@ class Readiness
             'trunk_name' => $trunk->name, 'caller_id' => $callerId, 'number_format' => $trunk->number_format,
             'concurrency' => (int) $c['concurrency'], 'cps' => (float) $c['cps'], 'timezone' => $policy['timezone'], 'scheduled_at' => $policy['scheduled_at'], 'priority' => $policy['priority'], 'ivr' => $ivr,
             'window_start' => $c['window_start'], 'window_end' => $c['window_end'], 'purpose' => $campaign->purpose,
+            'excluded_dates' => $policy['excluded_dates'], 'expires_on' => $policy['expires_on'],
             'targets' => $targets, 'retry_policy' => $policy['retry_policy'],
         ];
     }
 
     public function inWindow(array $snapshot): bool
     {
-        $time = CarbonImmutable::now($snapshot['timezone'])->format('H:i');
+        $now = CarbonImmutable::now($snapshot['timezone']);
+        if (in_array($now->format('Y-m-d'), $snapshot['excluded_dates'] ?? [], true) || (! empty($snapshot['expires_on']) && $now->format('Y-m-d') > $snapshot['expires_on'])) {
+            return false;
+        }
+        $time = $now->format('H:i');
 
         return $time >= $snapshot['window_start'] && $time < $snapshot['window_end'];
     }

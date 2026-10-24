@@ -4,6 +4,7 @@
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\CampaignController;
+use App\Http\Controllers\CampaignSeriesController;
 use App\Http\Controllers\ClientAccountController;
 use App\Http\Controllers\ClientAudioController;
 use App\Http\Controllers\ClientAuthController;
@@ -16,8 +17,34 @@ use App\Http\Controllers\FoundationController;
 use App\Http\Controllers\InteractiveController;
 use App\Http\Controllers\InternalTestMediaController;
 use App\Http\Controllers\PbxMediaController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SessionController;
 use Illuminate\Support\Facades\Route;
+
+foreach (['client/campaigns/series' => 'client.campaigns.series', 'campaign-series' => 'campaign-series'] as $prefix => $name) {
+    Route::middleware(['auth', 'throttle:30,1'])->prefix($prefix)->name($name)->group(function () {
+        Route::get('/', [CampaignSeriesController::class, 'index'])->name('');
+        Route::post('/', [CampaignSeriesController::class, 'store'])->name('.store');
+        Route::post('/{series}/stop', [CampaignSeriesController::class, 'stop'])->whereNumber('series')->name('.stop');
+    });
+}
+
+Route::view('/AcceptTerms&PrivacyPolicy', 'legal.policies')->name('legal.policies');
+
+foreach (['client' => 'client.reports', 'internal' => 'reports.index'] as $surface => $name) {
+    Route::middleware(['auth', 'throttle:30,1'])->prefix($surface === 'client' ? 'client/reports' : 'reports')->group(function () use ($name) {
+        $c = ReportController::class;
+        Route::get('/', [$c, 'index'])->name($name);
+        Route::post('/exports', [$c, 'export'])->name($name.'.export');
+        Route::get('/exports/{export:uuid}', [$c, 'download'])->name($name.'.download');
+        Route::post('/schedules', [$c, 'schedule'])->name($name.'.schedule');
+        Route::post('/schedules/{schedule}/stop', [$c, 'stop'])->whereNumber('schedule')->name($name.'.stop');
+    });
+}
+Route::middleware('auth')->group(function () {
+    Route::get('/client/notifications/count', [ClientPortalController::class, 'count'])->middleware('throttle:120,1')->name('client.notifications.count');
+    Route::post('/client/notifications/preferences', [ClientPortalController::class, 'preferences'])->middleware('throttle:20,1')->name('client.notifications.preferences');
+});
 
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     $billing = BillingController::class;
@@ -139,6 +166,8 @@ Route::middleware(['guest', 'throttle:client-auth'])->group(function () {
     Route::post('/reset-password/{id}/{token}', [$auth, 'reset'])->whereUuid('id')->where('token', '[A-Za-z0-9]{64}')->name('client.password.update');
 });
 Route::middleware(['auth', 'throttle:client-auth'])->group(function () {
+    Route::post('/client/settings/contact', [ClientAuthController::class, 'requestContact'])->name('client.settings.contact');
+    Route::post('/client/settings/contact/verify', [ClientAuthController::class, 'verifyContact'])->name('client.settings.contact.verify');
     Route::get('/client/settings', [ClientAuthController::class, 'settings'])->name('client.settings');
     Route::post('/client/settings', [ClientAuthController::class, 'update'])->name('client.settings.update');
 });
@@ -269,6 +298,7 @@ Route::middleware('auth')
     ->name('interactive.')
     ->group(function () {
         $c = InteractiveController::class;
+        Route::post('/simulate', [$c, 'simulate'])->middleware('throttle:30,1')->name('simulate');
 
         Route::get('/', [$c, 'index'])
             ->name('index');

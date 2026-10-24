@@ -7,3 +7,5 @@
 
 /* Keep small supporting text readable on the light surfaces. */
 .hero-note,.scene-label,.section-heading>p,.step-grid p,.workspace-band>div>p:last-child{color:#736b80}.message-heading small,.message-footer,.scene-tag small{color:#756b85}.login-description,.login-form-wrap>.eyebrow,.access-note p,.login-footer,.back-link{color:#786c88}.story-kicker,.story-content p,.story-footer{color:#c5bbd3}.site-footer>p,.site-footer>span{color:#786f83}
+/* Registration contact selection and consent. */
+.login-page .form-field select{width:100%;min-height:49px;border:1px solid #e4dfe9;border-radius:7px;padding:13px 15px;font:inherit;background:var(--paper,#fff);color:var(--ink);outline:none}.login-page .form-field select:focus{border-color:#9b83ce;box-shadow:0 0 0 3px #9b83ce1c}.login-page .form-field input[type=checkbox]{width:18px;min-height:18px;height:18px;padding:0;vertical-align:middle;margin-right:8px;accent-color:var(--purple,#6c56db)}.login-page .form-field>a{text-decoration:underline;margin-right:1rem}

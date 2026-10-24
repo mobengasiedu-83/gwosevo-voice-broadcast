@@ -9,6 +9,7 @@ use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\TrunkProfile;
 use App\Models\User;
+use App\Services\Broadcast\CampaignPolicy;
 use App\Services\Broadcast\Engine;
 use App\Services\Clients\AccountContext;
 use App\Services\Foundation;
@@ -60,7 +61,8 @@ class Workspace
             } else {
                 $c = app(Foundation::class)->createCampaign($u, $data);
             }
-            $config = collect($data)->only(['audio_id', 'caller_id', 'timezone', 'scheduled_at', 'concurrency', 'cps', 'window_start', 'window_end', 'max_attempts', 'retry_delay_seconds', 'priority', 'ivr_flow_id', 'source_group_id', 'dialing_strategy'])->all();
+            $data = array_replace($data, app(CampaignPolicy::class)->advanced($data));
+            $config = collect($data)->only(['retry_outcomes', 'excluded_dates', 'expires_on', 'audio_id', 'caller_id', 'timezone', 'scheduled_at', 'concurrency', 'cps', 'window_start', 'window_end', 'max_attempts', 'retry_delay_seconds', 'priority', 'ivr_flow_id', 'source_group_id', 'dialing_strategy'])->all();
             $trunk = $this->configuredTrunk();
             if ($trunk) {
                 $config['trunk_id'] = $trunk->id;

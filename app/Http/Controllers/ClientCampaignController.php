@@ -56,6 +56,7 @@ class ClientCampaignController extends Controller
             'window_start' => 'required|date_format:H:i', 'window_end' => 'required|date_format:H:i|after:window_start',
             'max_attempts' => 'required|integer|min:1|max:5', 'retry_delay_seconds' => 'required|integer|min:60|max:86400',
         ]);
+        $data += $request->only(['retry_outcomes', 'retry_policy_configured', 'excluded_dates_text', 'expires_on']);
         if (! empty($data['scheduled_at']) && ! CarbonImmutable::parse($data['scheduled_at'], $data['timezone'])->isFuture()) {
             throw ValidationException::withMessages(['scheduled_at' => 'Choose a future time in the selected timezone.']);
         }

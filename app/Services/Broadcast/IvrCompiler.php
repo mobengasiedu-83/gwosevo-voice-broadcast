@@ -23,6 +23,7 @@ class IvrCompiler
         }
         $out .= $auth.' same => n,Goto('.$flow->graph['start'].",1)\n";
         $out .= ' same => n(failed),UserEvent(VBPlaybackFailed,AttemptID:${VB_ATTEMPT_ID})'."\n same => n,Hangup()\n same => n(denied),Hangup(21)\n";
+        $telemetry = ($flow->graph['telemetry_version'] ?? 1) >= 2;
         $assets = array_column($verified['assets'], null, 'id');
         $media = fn ($id) => $remote ? '${VB_MEDIA_PREFIX}/'.$assets[$id]['uuid'].'/'.$assets[$id]['checksum'].'.wav' : 'gwosevo/'.$assets[$id]['uuid'];
         $routes = array_column($verified['routes'], null, 'id');
@@ -43,11 +44,15 @@ class IvrCompiler
                 if ($type !== 'condition') {
                     $out .= ' same => n,GotoIf($["${READSTATUS}" = "ERROR"]?s,failed)'."\n";
                 }
-                $out .= ' same => n,GotoIf($["${VB_DIGIT}" = ""]?'.$n['timeout'].",1)\n";
+                $out .= ' same => n,GotoIf($["${VB_DIGIT}" = ""]?'.($telemetry ? $id.'-timeout' : $n['timeout']).",1)\n";
                 foreach ($n['branches'] as $digit => $target) {
                     $out .= ' same => n,GotoIf($["${VB_DIGIT}" = "'.$digit.'"]?'.$id.'-digit-'.array_search($digit, array_keys($n['branches']), true).",1)\n";
                 }
-                $out .= ' same => n,Goto('.$n['invalid'].",1)\n";
+                $out .= ' same => n,Goto('.($telemetry ? $id.'-invalid' : $n['invalid']).",1)\n";
+                if ($telemetry) {
+                    $out .= 'exten => '.$id.'-timeout,1,UserEvent(VBInputTimeout,AttemptID:${VB_ATTEMPT_ID},NodeID:'.$id.")\n same => n,Goto(".$n['timeout'].",1)\n";
+                    $out .= 'exten => '.$id.'-invalid,1,UserEvent(VBInvalidInput,AttemptID:${VB_ATTEMPT_ID},NodeID:'.$id.")\n same => n,Goto(".$n['invalid'].",1)\n";
+                }
                 $i = 0;
                 foreach ($n['branches'] as $digit => $target) {
                     $out .= 'exten => '.$id.'-digit-'.$i.',1,UserEvent(VBDigit,AttemptID:${VB_ATTEMPT_ID},NodeID:'.$id.',Digit:'.$digit.")\n same => n,Goto(".$target.",1)\n";

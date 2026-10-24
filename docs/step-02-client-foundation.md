@@ -71,3 +71,7 @@ Rollback deliberately refuses if different accounts now contain the same phone n
 ClientFoundationTest covers account management permission checks, audit, query and descendant isolation, identical phone numbers in different accounts, denial of internal screens and media downloads, accidental role escalation, suspension/login/session behavior, no automatic campaign resume, job context cleanup and cross-account membership/ownership rejection.
 
 Existing contact, import, approval, dashboard and broadcast tests remain the regression baseline. No real client account, production call or external PBX change is created by automated tests.
+
+### Client Management navigation
+
+The internal sidebar exposes **Client Management** at `/client-accounts` for users with `clients.manage`. The `Administrator` and `Super Administrator` roles receive this permission. Apply `php artisan db:seed --class=ClientManagementPermissionsSeeder --force` on existing deployments; it adds the grants without replacing other role permissions. It does not assign roles to users. Client users remain excluded from internal account administration.

@@ -2,6 +2,7 @@
 @section('heading', 'Your workspace, at a glance')
 @section('description', 'Track your campaigns, recording approvals and audience in one place.')
 @section('portal-content')
+<section class="panel"><h2>Contact verification</h2><p>Email: {{ auth()->user()->email_verified_at ? 'Verified' : 'Not verified' }} · Mobile: {{ auth()->user()->phone_verified_at ? 'Verified' : 'Not verified' }}. <a href="{{ route('client.settings') }}">Manage and verify contacts →</a></p></section>
 <section class="metrics" aria-label="Account summary">
 @foreach([['Active campaigns',$summary['active'],'Running or scheduled','↗'],['Contacts',$summary['contacts'],$summary['groups'].' contact groups','♧'],['Awaiting approval',$summary['pending_audio'],'Recordings in review','≋'],['Recipients reached',$summary['delivered'],'At least one completed playback','✓']] as [$label,$value,$caption,$icon])<article class="metric"><div><span>{{ $label }}</span><span class="metric-symbol" aria-hidden="true">{{ $icon }}</span></div><strong>{{ number_format($value) }}</strong><small>{{ $caption }}</small></article>@endforeach
 </section>

@@ -82,3 +82,15 @@ Run the additive wallet migration and the `BillingPermissionsSeeder` and `Defaul
 ## Configurable billing policy
 
 Apply the additive `2026_10_24_040000_add_configurable_billing_policy` migration. Billing Administrators and Super Administrators can configure versioned prices, currency/precision, duration basis, rounding, failure treatment and actual-duration credit exposure at `/billing`. Assign a new policy version to an account for future launches. Actual-duration settlement requires verified duration evidence; existing runs and posted ledger entries retain their original policy. [Policy configuration](step-08-wallet-billing.md#administrator-configurable-billing-policies).
+
+## Stage 10 — Notifications and reports
+
+Apply the additive `2026_10_24_050000_add_notifications_and_reports` migration, deploy report/bell assets, refresh caches and restart queue workers. Keep the minute scheduler running for notice synchronization, report schedules and retention. External email/SMS notices require verified personal opt-in and `VOICE_ALERT_DELIVERY_ENABLED=true` (default false). No new role grants are needed. [Stage 10 operations and report definitions](step-10-notifications-reports.md). Stage 09 payment integration remains deferred in [reminders](reminder.md#stage-09--payment-gateway-and-top-ups-deferred).
+
+## Dual-contact registration
+
+Apply `2026_10_24_070000_add_registration_contact_details`, refresh caches and restart workers. Signup requires email, Ghana mobile, country and Terms/Privacy acceptance, verifies the selected contact by a five-minute OTP, and records combined policy version/timestamp. Existing clients retain their data. Contact settings allow verification and pending replacements, with OTP audit records. Replace the public dummy policy page before launch. [Authentication details](step-03-client-authentication.md#dual-contact-signup-and-contact-changes).
+
+## Step 11 — Advanced campaigns and IVR
+
+Apply `2026_10_24_080000_add_campaign_series`, deploy views/IVR assets, refresh caches and restart normal long-running processes. Keep the minute scheduler running for `campaigns:recurring` and existing activation/expiry maintenance. New IVR telemetry requires a new approved/deployed IVR version; existing installed versions remain unchanged. No dispatch flags, real schedules or PBX configuration are enabled by installation. [Step 11 operations](step-11-advanced-campaigns-ivr.md).

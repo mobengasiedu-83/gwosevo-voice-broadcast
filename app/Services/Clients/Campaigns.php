@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\User;
+use App\Services\Broadcast\CampaignPolicy;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\Readiness;
 use App\Services\Campaigns\Workspace;
@@ -42,7 +43,8 @@ class Campaigns
             if (! count($ids) || count($ids) > 10000) {
                 throw ValidationException::withMessages(['source_group_id' => 'Select a group with 1–10,000 contacts.']);
             }
-            $config = collect($data)->only(['audio_id', 'source_group_id', 'timezone', 'scheduled_at', 'window_start', 'window_end', 'max_attempts', 'retry_delay_seconds'])->all();
+            $data = array_replace($data, app(CampaignPolicy::class)->advanced($data));
+            $config = collect($data)->only(['retry_outcomes', 'excluded_dates', 'expires_on', 'audio_id', 'source_group_id', 'timezone', 'scheduled_at', 'window_start', 'window_end', 'max_attempts', 'retry_delay_seconds'])->all();
             $config += ['contact_ids' => $ids, 'dialing_strategy' => 'direct', 'concurrency' => 1, 'cps' => 1, 'priority' => 1];
             $trunk = app(Workspace::class)->configuredTrunk();
             if ($trunk) {

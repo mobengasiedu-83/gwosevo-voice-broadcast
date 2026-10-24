@@ -35,7 +35,7 @@ class Portal
     {
         $id = $this->authorize($user);
 
-        return ClientNotice::where('client_account_id', $id)->select('client_notices.*')
+        return ClientNotice::where('client_account_id', $id)->where(fn ($q) => $q->whereNull('recipient_user_id')->orWhere('recipient_user_id', $user->id))->select('client_notices.*')
             ->selectSub(DB::table('client_notice_reads')->select('read_at')->whereColumn('client_notice_id', 'client_notices.id')->where('user_id', $user->id)->limit(1), 'read_at');
     }
 

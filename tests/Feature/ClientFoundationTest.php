@@ -66,6 +66,20 @@ class ClientFoundationTest extends TestCase
         return Contact::create(['name' => $user->name, 'phone_e164' => '+233241234567', 'source' => 'Test', 'created_by' => $user->id]);
     }
 
+    public function test_client_management_menu_and_access_are_available_to_administrators(): void
+    {
+        foreach (['Super Administrator', 'Administrator'] as $role) {
+            $user = User::factory()->create();
+            $user->assignRole($role);
+            $this->actingAs($user)->get('/dashboard')->assertOk()->assertSee('Client Management')->assertSee(route('clients.accounts'));
+            $this->get('/client-accounts')->assertOk()->assertSee('Client Alpha');
+        }
+        $this->actingAs($this->alice)->get('/client-accounts')->assertForbidden();
+        $analyst = User::factory()->create();
+        $analyst->assignRole('Analyst');
+        $this->actingAs($analyst)->get('/client-accounts')->assertForbidden();
+    }
+
     public function test_accounts_are_admin_managed_and_status_changes_are_audited(): void
     {
         $this->actingAs($this->admin)->get('/client-accounts')->assertOk()->assertSee('Client Alpha');

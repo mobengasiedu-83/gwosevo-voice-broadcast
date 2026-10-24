@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'terms_version' => env('CLIENT_TERMS_VERSION', '2026-10-24'),
+    'terms_url' => env('CLIENT_TERMS_URL'),
+    'privacy_url' => env('CLIENT_PRIVACY_URL'),
     'registration_enabled' => env('CLIENT_REGISTRATION_ENABLED', true),
     'sms' => [
         'driver' => env('CLIENT_SMS_DRIVER', 'disabled'),

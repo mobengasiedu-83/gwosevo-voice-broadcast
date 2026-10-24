@@ -30,7 +30,7 @@ class SessionController extends Controller
         if (! Auth::attempt($credentials)) {
             throw ValidationException::withMessages(['email' => 'The supplied credentials are invalid.']);
         }
-        if (Auth::user()->isClient() && (! Auth::user()->clientAccountActive() || ($channel === 'phone' && ! Auth::user()->phone_verified_at))) {
+        if (Auth::user()->isClient() && (! Auth::user()->clientAccountActive() || (! Auth::user()->email_verified_at && ! Auth::user()->phone_verified_at))) {
             Auth::logout();
             throw ValidationException::withMessages(['email' => 'The supplied credentials are invalid or the account is unavailable.']);
         }

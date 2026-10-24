@@ -9,6 +9,7 @@ use App\Models\TrunkProfile;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\IvrCompiler;
 use App\Services\Broadcast\IvrDesigner;
+use App\Services\Broadcast\IvrSimulator;
 use App\Services\Broadcast\Readiness;
 use App\Services\Foundation;
 use Illuminate\Http\Request;
@@ -79,6 +80,14 @@ class InteractiveController extends Controller
         $designer->save($request->user(), $data['name'], $graph, isset($data['source_id']) ? IvrFlow::findOrFail($data['source_id']) : null);
 
         return back()->with('status', 'New IVR version saved for separate-user approval.');
+    }
+
+    public function simulate(Request $request, IvrSimulator $simulator)
+    {
+        abort_unless($request->user()->hasAnyPermission(['campaigns.manage', 'campaigns.approve', 'telephony.manage']), 403);
+        $data = $request->validate(['graph' => 'required|array', 'inputs' => 'present|array|max:40']);
+
+        return response()->json($simulator->run($data['graph'], $data['inputs']))->header('Cache-Control', 'private, no-store');
     }
 
     public function approve(Request $request, IvrFlow $flow, IvrDesigner $designer)

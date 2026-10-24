@@ -29,3 +29,20 @@ The URL-mode status exit check and the campaign execution-versus-playback report
 - Do not interpret Completed as successful delivery. Use unique-recipient playback results and the attempt outcomes.
 - Do not interpret a successful URL-mode status exit as a completed PBX media test.
 - No automatic production calls or PBX changes are authorized by this reminder.
+
+## Stage 09 — Payment gateway and top-ups deferred
+
+Deferred at the owner's request on 24 October 2026. Do not enable payment collection or claim commercial payment readiness. No payment migration, checkout request or transaction-status call was executed during the initial investigation.
+
+- Confirm the payment provider and merchant-specific API documentation. Xcel Business/PayGate was investigated as the proposed provider; verify authentication, initiation, authoritative status lookup, callback authentication, amounts/currency, fees, expiration, refunds and reversals before activation.
+- Implement client top-up requests and hosted checkout, with immutable amount/account/reference binding and explicit pending, failed, expired and uncertain states.
+- Credit wallets only after independent provider verification of successful payment, exact amount/currency, merchant and original reference. Browser redirects and callback payloads alone must never grant credit.
+- Enforce idempotent ledger funding and callback replay protection; retain reconciliation evidence, account-scoped receipts and audited handling of uncertain payments.
+- Add finance reconciliation screens/jobs, provider sandbox tests and controlled acceptance before configuring live credentials.
+- Keep existing Stage 08 manual adjustments available to authorized finance staff; they are not verified gateway top-ups.
+
+Resume Stage 09 before an online paid launch. Stage 10 notifications and analytics may proceed against existing campaign and ledger data without payment integration.
+
+## Registration policies before public launch
+
+Replace the dummy Terms and Privacy Policy at `/AcceptTerms&PrivacyPolicy` with approved content, complete the operator/contact/retention details, and set the combined `CLIENT_TERMS_VERSION`. Signup records acceptance of that version. Ghana is the currently supported registration country; additional countries require phone-normalization support. Optional business verification and staff invitations remain later work. Requiring both contacts verified before paid campaigns remains a separate policy decision.

@@ -58,6 +58,40 @@ return [
             'ignore_exceptions' => false,
         ],
 
+        'api' => ['driver' => 'daily', 'path' => storage_path('logs/api.log'), 'days' => 14, 'level' => 'info'],
+        'webhooks' => ['driver' => 'daily', 'path' => storage_path('logs/webhooks.log'), 'days' => 14, 'level' => 'info'],
+        'email' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/email.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'sms' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/sms.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'broadcast' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/broadcast.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'reports' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/reports.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'single' => [
             'driver' => 'single',
             'path' => storage_path('logs/laravel.log'),

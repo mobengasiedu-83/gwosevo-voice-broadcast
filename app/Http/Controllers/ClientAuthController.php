@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ClientAuth\ContactVerification;
 use App\Services\ClientAuth\DeliveryException;
 use App\Services\ClientAuth\Recovery;
 use App\Services\ClientAuth\Registration;
@@ -30,7 +31,7 @@ class ClientAuthController extends Controller
 
     public function start(Request $request, Registration $registration)
     {
-        $data = $request->validate(['name' => 'required|string|max:255', 'organization' => 'required|string|max:255', 'identifier' => 'required|string|max:255']);
+        $data = $request->only(['name', 'organization', 'email', 'phone', 'country', 'verification_channel', 'terms']);
         try {
             [$id, $secret] = $registration->start($data);
         } catch (DeliveryException $e) {
@@ -38,7 +39,7 @@ class ClientAuthController extends Controller
         }
         $request->session()->put('client.registration', ['id' => $id, 'secret' => $secret]);
 
-        return redirect()->route('client.register.verify')->with('status', 'Verification code sent. It expires in 10 minutes.');
+        return redirect()->route('client.register.verify')->with('status', 'Verification code sent. It expires in 5 minutes.');
     }
 
     private function credentials(Request $request): array
@@ -96,7 +97,7 @@ class ClientAuthController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('client.foundation')->with('status', 'Your account is ready. Use your verified email or phone and password to sign in.');
+        return redirect()->route('client.foundation')->with('status', 'Your account is ready. Use your email or phone and password to sign in.');
     }
 
     public function forgot()
@@ -138,6 +139,34 @@ class ClientAuthController extends Controller
         abort_unless($request->user()->isClient(), 403);
 
         return view('client-auth.settings', ['user' => $request->user(), 'account' => $request->user()->clientAccount()->firstOrFail(), 'unread' => app(Portal::class)->unread($request->user())]);
+    }
+
+    public function requestContact(Request $request, ContactVerification $verification)
+    {
+        app(Portal::class)->authorize($request->user());
+        $data = $request->validate(['channel' => 'required|in:email,phone', 'contact' => 'required|string|max:255', 'current_password' => 'required|current_password:web']);
+        try {
+            [$id, $secret] = $verification->start($request->user(), $data['channel'], $data['contact']);
+        } catch (DeliveryException $e) {
+            throw ValidationException::withMessages(['contact' => 'Unable to send a verification code. Try again later.']);
+        }
+        $request->session()->put('client.contact_verification', compact('id', 'secret'));
+
+        return back()->with('status', 'Code sent to the selected contact. It expires in five minutes. Your current contact remains active until verification.');
+    }
+
+    public function verifyContact(Request $request, ContactVerification $verification)
+    {
+        $data = $request->validate(['code' => 'required|digits:6']);
+        $state = $request->session()->get('client.contact_verification');
+        if (! is_array($state) || empty($state['id']) || empty($state['secret'])) {
+            throw ValidationException::withMessages(['code' => 'Request a contact verification code first.']);
+        }
+        $verification->verify($request->user(), $state['id'], $state['secret'], $data['code']);
+        $request->session()->forget('client.contact_verification');
+        $request->session()->regenerate();
+
+        return back()->with('status', 'Contact verified and saved.');
     }
 
     public function update(Request $request)

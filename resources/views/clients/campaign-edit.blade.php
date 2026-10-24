@@ -2,6 +2,7 @@
 @section('heading', $campaign ? 'Edit campaign' : 'Create campaign')
 @section('description', 'Choose your audience and approved recording, then set when recipients may be called.')
 @section('portal-content')
+<p><a href="{{ route('client.campaigns.series') }}">Recurring schedules →</a></p>
 <form class="panel campaign-wizard" method="post" action="{{ $campaign ? route('client.campaigns.save', $campaign) : route('client.campaigns.store') }}">
 @csrf
 @php($config = $campaign?->configuration ?? [])
@@ -23,8 +24,9 @@
 <fieldset><legend>3 · Retry settings</legend>
 <div class="form-field"><label for="max_attempts">Attempts per recipient including first call</label><input type="number" id="max_attempts" name="max_attempts" min="1" max="5" required value="{{ old('max_attempts', $config['max_attempts'] ?? 1) }}"></div>
 <div class="form-field"><label for="retry_delay_seconds">Initial retry delay in seconds</label><input type="number" id="retry_delay_seconds" name="retry_delay_seconds" min="60" max="86400" required value="{{ old('retry_delay_seconds', $config['retry_delay_seconds'] ?? 300) }}"></div>
-<p>Busy, no-answer and failed calls share this retry policy. The delay doubles after each failure, up to one day.</p>
+<p>Selected retry reasons use this policy. The delay doubles after each failure, up to one day.</p>
 </fieldset>
 <button class="button">Save and review campaign</button> <a href="{{ route('client.campaigns') }}">Back to campaigns</a>
+@include('campaigns.advanced-policy')
 </form>
 @endsection

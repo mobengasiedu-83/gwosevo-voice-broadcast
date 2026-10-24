@@ -323,7 +323,7 @@ Step 02 adds internal client organization management, account-user links, data i
 
 ### Client registration and authentication (Step 03)
 
-Clients can register using an email address or Ghana phone number, verify a registration-only code, then create a strong password. Future sign-ins use email/phone and password. Verified clients can recover passwords using single-use links and manage their name/password in Account settings. TXTConnect supplies SMS; Laravel mail supplies email. Account isolation, suspension and internal permission boundaries continue to apply. The client workspace and summaries are covered in Step 04; operational tools follow in later stages.
+Clients register with both email and Ghana mobile number, country and recorded Terms/Privacy acceptance. They choose one contact for a five-minute registration OTP, then create a strong password. Future sign-ins use either saved email/phone and password. Settings show independent verification statuses and support verifying or replacing contacts. Verified clients can recover passwords using single-use links and manage their name/password in Account settings. TXTConnect supplies SMS; Laravel mail supplies email. Account isolation, suspension and internal permission boundaries continue to apply. The client workspace and summaries are covered in Step 04; operational tools follow in later stages.
 
 Setup, delivery credentials, deployment and acceptance checks: [Step 03 authentication](docs/step-03-client-authentication.md).
 
@@ -348,3 +348,11 @@ Clients can create one-way campaigns with account-owned groups and approved audi
 Client wallets show balance, reserved/available credit, prices and transactions. Internal finance screens provide immutable price versions, audited manual adjustments/refunds and reconciliation. The default reference rate is **GHS 0.003 per minute (0.30 pesewas)**, using recording length rounded up to whole minutes for answered calls, including playback failures. Unanswered calls are free. Per-attempt reservations prevent competing campaigns from spending the same credit; uncertain outcomes retain funds for review. [Stage 08 policy, setup and financial controls](docs/step-08-wallet-billing.md).
 
 Billing Administrators and Super Administrators can configure new policy versions at `/billing`: currency/precision, price, recording or verified answered duration, rounding increments, playback-failure treatment and credit exposure. Existing runs retain their launch policy. [Configure billing policies](docs/step-08-wallet-billing.md#administrator-configurable-billing-policies).
+
+### Notifications and advanced reports (Stage 10)
+
+Clients receive scoped in-app alerts and can opt into verified email/SMS notices. Client and internal reports provide campaign funnels, attempts/playback, IVR and ledger costs, with private CSV/XLSX exports and daily/weekly schedules. External alerts default off. [Stage 10 setup and definitions](docs/step-10-notifications-reports.md). Stage 09 payment integration is deferred in the [reminder list](docs/reminder.md#stage-09--payment-gateway-and-top-ups-deferred).
+
+### Advanced campaigns and IVR (Step 11)
+
+Recurring daily/weekly/monthly schedules support manual review or normal gated automatic launch, with overlap prevention, missed-slot handling and history. Campaigns have selectable retry reasons, explicit holiday exclusions and expiry. Voice & IVR adds visual editing, branching diagrams and a call-free simulator; new IVR versions support invalid-input/timeout analysis. [Step 11 setup and behavior](docs/step-11-advanced-campaigns-ivr.md).

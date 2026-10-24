@@ -16,6 +16,7 @@ class RolesAndPermissionsSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $matrix = [
             'Super Administrator' => ['billing.manage', 'billing.view', 'clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
+            'Administrator' => ['clients.manage'],
             'Billing Administrator' => ['billing.manage', 'billing.view'],
             'Telephony Administrator' => ['telephony.view', 'telephony.manage'],
             'Campaign Manager' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage'],

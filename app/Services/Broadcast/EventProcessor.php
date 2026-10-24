@@ -35,6 +35,13 @@ class EventProcessor
                 }
             }
         }
+        if (in_array($frame['UserEvent'] ?? '', ['VBInputTimeout', 'VBInvalidInput'], true)) {
+            $snapshot = CampaignVersion::findOrFail($attempt->campaign_version_id)->snapshot['broadcast'];
+            $node = collect($snapshot['ivr']['graph']['nodes'] ?? [])->firstWhere('id', $frame['NodeID'] ?? '');
+            if (($snapshot['ivr']['graph']['telemetry_version'] ?? 1) < 2 || ! $node || ! in_array($node['type'], ['input', 'confirmation', 'condition'], true) || ($frame['Uniqueid'] ?? '') !== $attempt->uniqueid) {
+                return;
+            }
+        }
         unset($frame['Digit']);
         if ($digit !== null) {
             $frame['Digit'] = $digit;
@@ -106,6 +113,10 @@ class EventProcessor
             if ($own && $name === 'UserEvent' && ($f['AttemptID'] ?? '') === $a->uuid) {
                 if (in_array($user, ['VBIVRComplete', 'VBTransferStart', 'VBOptOut'], true) || ($user === 'VBDigit' && isset($f['Digit']))) {
                     $a->answered_at ??= now();
+                }
+                if (in_array($user, ['VBInputTimeout', 'VBInvalidInput'], true)) {
+                    $a->answered_at ??= now();
+                    DB::table('dtmf_responses')->insertOrIgnore(['call_attempt_id' => $a->id, 'node_id' => $f['NodeID'], 'digit' => null, 'response_type' => $user === 'VBInputTimeout' ? 'timeout' : 'invalid', 'event_key' => $event->event_key, 'occurred_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
                 }
                 if ($user === 'VBDigit' && isset($f['Digit'])) {
                     DB::table('dtmf_responses')->insertOrIgnore(['call_attempt_id' => $a->id, 'node_id' => $f['NodeID'], 'digit' => $f['Digit'], 'event_key' => $event->event_key, 'occurred_at' => now(), 'created_at' => now(), 'updated_at' => now()]);

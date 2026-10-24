@@ -1,7 +1,7 @@
 @extends('foundation.layout')
 @section('title', 'Wallets and billing policy')
 @section('content')
-<h1>Wallets and pricing</h1>
+<h1>Wallets and pricing</h1><p><a href="{{ route('reports.index', ['kind'=>'billing']) }}">Advanced billing reports and exports</a></p>
 <p>Configure billing policies here, then assign a version to each client account. Existing executions keep their launch policy. Unanswered calls are always free; refunds remain audited.</p>
 @can('billing.manage')
 <section>

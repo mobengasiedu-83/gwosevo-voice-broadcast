@@ -68,7 +68,7 @@ class BroadcastGateway extends Command
                         $stop = true;
                     }
                     // Never include raw server frames, destinations or connection credentials in logs.
-                    Log::warning('Broadcast gateway disconnected; reservations require reconciliation.', ['exception' => get_class($e)]);
+                    Log::channel('broadcast')->warning('Broadcast gateway disconnected; reservations require reconciliation.', ['exception' => get_class($e)]);
                     $known = ['AMI configuration incomplete.', 'AMI connection failed.', 'Unexpected AMI banner.', 'AMI login rejected.', 'AMI login timed out.', 'AMI write timeout; outcome uncertain.', 'AMI write select failed.', 'AMI write failed; outcome uncertain.', 'AMI read failed.', 'AMI disconnected.', 'AMI frame too large.', 'AMI incomplete frame too large.', 'Gateway lease lost.', 'AMI heartbeat expired.', 'Active-channel snapshot timed out.', 'Uncertain originate acknowledgement.', 'AMI channel inventory lacks correlation identifiers.', 'AMI channel inventory count mismatch.', 'Channel inventory exceeds safety bound.', 'AMI channel inventory rejected. Verify AMI read permissions.'];
                     $reason = in_array($e->getMessage(), $known, true) ? $e->getMessage() : get_class($e);
                     $this->warn('AMI session interrupted: '.$reason.' New calls blocked; reconnecting.');
