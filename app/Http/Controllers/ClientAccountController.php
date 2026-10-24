@@ -31,11 +31,4 @@ class ClientAccountController extends Controller
 
         return redirect()->route('clients.accounts')->with('status', 'Account status updated. Reactivation does not resume campaigns automatically.');
     }
-
-    public function foundation(Request $request)
-    {
-        abort_unless($request->user()->isClient(), 403);
-
-        return view('clients.foundation', ['account' => $request->user()->clientAccount()->firstOrFail()]);
-    }
 }

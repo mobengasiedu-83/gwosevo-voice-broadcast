@@ -3,6 +3,11 @@
 
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\CampaignController;
+use App\Http\Controllers\ClientAccountController;
+use App\Http\Controllers\ClientAudioController;
+use App\Http\Controllers\ClientAuthController;
+use App\Http\Controllers\ClientContactsController;
+use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FoundationController;
@@ -12,11 +17,46 @@ use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\SessionController;
 use Illuminate\Support\Facades\Route;
 
+Route::middleware(['auth', 'throttle:client-audio'])->prefix('client/audio')->name('client.audio')->group(function () {
+    $audio = ClientAudioController::class;
+    Route::get('/', [$audio, 'index']);
+    Route::post('/', [$audio, 'upload'])->name('.upload');
+    Route::get('/{audio}/preview', [$audio, 'preview'])->name('.preview');
+    Route::get('/{audio}/download', [$audio, 'download'])->name('.download');
+    Route::post('/{audio}/resubmit', [$audio, 'resubmit'])->name('.resubmit');
+});
+
+Route::middleware(['auth', 'throttle:client-contacts'])->prefix('client')->name('client.')->group(function () {
+    $contacts = ClientContactsController::class;
+    Route::get('/contacts', [$contacts, 'directory'])->name('contacts');
+    Route::post('/contacts', [$contacts, 'createContact'])->name('contacts.store');
+    Route::get('/contacts/{contact}', [$contacts, 'contact'])->name('contacts.show');
+    Route::post('/contacts/{contact}', [$contacts, 'updateContact'])->name('contacts.update');
+    Route::post('/contacts/{contact}/groups', [$contacts, 'membership'])->name('contacts.groups');
+    Route::post('/contacts/{contact}/dnd', [$contacts, 'dnd'])->name('contacts.dnd');
+    Route::get('/groups', [$contacts, 'groups'])->name('groups');
+    Route::post('/groups', [$contacts, 'saveGroup'])->name('groups.store');
+    Route::get('/groups/{group}', [$contacts, 'group'])->name('groups.show');
+    Route::post('/groups/{group}', [$contacts, 'saveGroup'])->name('groups.update');
+    Route::get('/imports/template', [$contacts, 'template'])->name('imports.template');
+    Route::get('/imports', [$contacts, 'imports'])->name('imports');
+    Route::post('/imports', [$contacts, 'upload'])->name('imports.upload');
+    Route::get('/imports/{batch}', [$contacts, 'batch'])->name('imports.show');
+    Route::post('/imports/{batch}/map', [$contacts, 'map'])->name('imports.map');
+    Route::post('/imports/{batch}/confirm', [$contacts, 'confirm'])->name('imports.confirm');
+    Route::get('/imports/{batch}/errors', [$contacts, 'errors'])->name('imports.errors');
+});
+
 Route::middleware('auth')->group(function () {
-    Route::get('/client', [\App\Http\Controllers\ClientAccountController::class, 'foundation'])->name('client.foundation');
-    Route::get('/client-accounts', [\App\Http\Controllers\ClientAccountController::class, 'index'])->name('clients.accounts');
-    Route::post('/client-accounts', [\App\Http\Controllers\ClientAccountController::class, 'store'])->name('clients.accounts.store');
-    Route::post('/client-accounts/{account}/status', [\App\Http\Controllers\ClientAccountController::class, 'status'])->name('clients.accounts.status');
+    Route::get('/client/campaigns', [ClientPortalController::class, 'campaigns'])->name('client.campaigns');
+    Route::get('/client/notifications', [ClientPortalController::class, 'notifications'])->name('client.notifications');
+    Route::post('/client/notifications/read-all', [ClientPortalController::class, 'readAll'])->middleware('throttle:30,1')->name('client.notifications.read-all');
+    Route::post('/client/notifications/{notice}/read', [ClientPortalController::class, 'read'])->whereNumber('notice')->middleware('throttle:30,1')->name('client.notifications.read');
+
+    Route::get('/client', [ClientPortalController::class, 'dashboard'])->name('client.foundation');
+    Route::get('/client-accounts', [ClientAccountController::class, 'index'])->name('clients.accounts');
+    Route::post('/client-accounts', [ClientAccountController::class, 'store'])->name('clients.accounts.store');
+    Route::post('/client-accounts/{account}/status', [ClientAccountController::class, 'status'])->name('clients.accounts.status');
 });
 
 /*
@@ -59,7 +99,25 @@ Route::get(
 |--------------------------------------------------------------------------
 */
 
-Route::get('/', fn() => view('welcome'));
+Route::get('/', fn () => view('welcome'));
+
+Route::middleware(['guest', 'throttle:client-auth'])->group(function () {
+    $auth = ClientAuthController::class;
+    Route::get('/register', [$auth, 'register'])->name('client.register');
+    Route::post('/register', [$auth, 'start'])->name('client.register.start');
+    Route::get('/register/verify', [$auth, 'verification'])->name('client.register.verify');
+    Route::post('/register/verify', [$auth, 'verify'])->name('client.register.check');
+    Route::post('/register/resend', [$auth, 'resend'])->name('client.register.resend');
+    Route::post('/register/password', [$auth, 'finish'])->name('client.register.finish');
+    Route::get('/forgot-password', [$auth, 'forgot'])->name('client.password.forgot');
+    Route::post('/forgot-password', [$auth, 'sendRecovery'])->name('client.password.email');
+    Route::get('/reset-password/{id}/{token}', [$auth, 'resetForm'])->whereUuid('id')->where('token', '[A-Za-z0-9]{64}')->name('client.password.reset');
+    Route::post('/reset-password/{id}/{token}', [$auth, 'reset'])->whereUuid('id')->where('token', '[A-Za-z0-9]{64}')->name('client.password.update');
+});
+Route::middleware(['auth', 'throttle:client-auth'])->group(function () {
+    Route::get('/client/settings', [ClientAuthController::class, 'settings'])->name('client.settings');
+    Route::post('/client/settings', [ClientAuthController::class, 'update'])->name('client.settings.update');
+});
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])

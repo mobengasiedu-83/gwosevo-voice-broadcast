@@ -1,0 +1,2 @@
+<div class="form-field"><label for="password">New password</label><input type="password" id="password" name="password" autocomplete="new-password" minlength="12" maxlength="128" required><p>Use at least 12 characters, uppercase and lowercase letters, a number and a symbol.</p></div>
+<div class="form-field"><label for="password_confirmation">Confirm password</label><input type="password" id="password_confirmation" name="password_confirmation" autocomplete="new-password" minlength="12" maxlength="128" required></div>

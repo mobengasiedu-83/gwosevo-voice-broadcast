@@ -11,6 +11,11 @@ class AudioFile extends Model
 
     protected $guarded = ['id'];
 
+    public function clientAccount()
+    {
+        return $this->belongsTo(ClientAccount::class);
+    }
+
     protected function casts(): array
     {
         return ['approved_at' => 'datetime', 'deployed_at' => 'datetime', 'duration' => 'float', 'rejected_at' => 'datetime'];

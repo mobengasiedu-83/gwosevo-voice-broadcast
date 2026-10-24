@@ -35,7 +35,7 @@ class BroadcastController extends Controller
         abort_unless($request->user()->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']), 403);
 
         return view('broadcast.audio-library', [
-            'audio' => AudioFile::whereNotNull('uuid')->when($request->validate(['status' => 'nullable|in:pending,approved,rejected'])['status'] ?? null, fn ($q, $status) => $q->where('status', $status))->latest()->paginate(25)->withQueryString(),
+            'audio' => AudioFile::with('clientAccount')->whereNotNull('uuid')->when($request->validate(['status' => 'nullable|in:pending,approved,rejected'])['status'] ?? null, fn ($q, $status) => $q->where('status', $status))->latest()->paginate(25)->withQueryString(),
         ]);
     }
 

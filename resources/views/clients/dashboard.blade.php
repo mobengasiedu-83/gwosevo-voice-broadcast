@@ -1,0 +1,11 @@
+@extends('clients.layout')
+@section('heading', 'Your workspace, at a glance')
+@section('description', 'Track your campaigns, recording approvals and audience in one place.')
+@section('portal-content')
+<section class="metrics" aria-label="Account summary">
+@foreach([['Active campaigns',$summary['active'],'Running or scheduled','↗'],['Contacts',$summary['contacts'],$summary['groups'].' contact groups','♧'],['Awaiting approval',$summary['pending_audio'],'Recordings in review','≋'],['Recipients reached',$summary['delivered'],'At least one completed playback','✓']] as [$label,$value,$caption,$icon])<article class="metric"><div><span>{{ $label }}</span><span class="metric-symbol" aria-hidden="true">{{ $icon }}</span></div><strong>{{ number_format($value) }}</strong><small>{{ $caption }}</small></article>@endforeach
+</section>
+<div class="portal-columns"><section class="panel"><div class="panel-heading"><div><h2>Recent campaigns</h2><p class="muted">Current status across your account</p></div><a href="{{ route('client.campaigns') }}">View all →</a></div>@include('clients.campaign-table')
+</section><section class="panel"><div class="panel-heading"><div><h2>Approval updates</h2><p class="muted">{{ $unread }} unread notifications</p></div><a href="{{ route('client.notifications') }}">View all →</a></div>@forelse($notices as $notice)<article class="notification-item"><span class="pill {{ $notice->kind === 'audio.approved' ? 'good' : 'warn' }}">{{ $notice->title }}</span><p>{{ $notice->message }}</p><small class="muted">{{ $notice->occurred_at->format('d M Y, H:i') }} UTC @if(!$notice->read_at) · Unread @endif</small></article>@empty<div class="empty"><span aria-hidden="true">◉</span><h3>You’re all caught up</h3><p>Recording review decisions will appear here.</p></div>@endforelse</section></div>
+<section class="panel getting-started"><div><span class="eyebrow">YOUR ACCOUNT</span><h2>Ready for your next message</h2><p class="muted">{{ $summary['approved_audio'] }} approved recordings · {{ $summary['ready'] }} ready campaigns</p></div><a class="button secondary" href="{{ route('client.settings') }}">Manage your profile →</a><p class="availability">Create a group, then add contacts manually or import a spreadsheet. Upload a recording to your Audio library for internal review. Campaign controls follow in Step 07.</p></section>
+@endsection

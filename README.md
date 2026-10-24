@@ -320,3 +320,21 @@ Production work deferred until the move: [reminders](docs/reminder.md).
 ## Client account foundation
 
 Step 02 adds internal client organization management, account-user links, data isolation and suspension controls. See [client account foundation](docs/step-02-client-foundation.md). Internal administrators manage accounts at /client-accounts; provision new client users with client:user. Client registration/OTP, password onboarding and the operational client portal remain later stages.
+
+### Client registration and authentication (Step 03)
+
+Clients can register using an email address or Ghana phone number, verify a registration-only code, then create a strong password. Future sign-ins use email/phone and password. Verified clients can recover passwords using single-use links and manage their name/password in Account settings. TXTConnect supplies SMS; Laravel mail supplies email. Account isolation, suspension and internal permission boundaries continue to apply. The client workspace and summaries are covered in Step 04; operational tools follow in later stages.
+
+Setup, delivery credentials, deployment and acceptance checks: [Step 03 authentication](docs/step-03-client-authentication.md).
+
+### Client portal and dashboard (Step 04)
+
+The separate client workspace provides an account overview, campaign summaries with delivery counts, audio review notifications and profile settings. It supports light/dark mode and responsive navigation. Notifications have personal read/unread status; client data and staff operations remain isolated. [Step 04 setup and scope](docs/step-04-client-portal.md).
+
+### Client contacts, groups and imports (Step 05)
+
+Clients can manage their account's contacts and groups, add/remove memberships, upload CSV/XLS/XLSX lists, map columns, preview duplicates/invalid rows and confirm background imports. Ghana phone normalization restores Excel's missing leading zero. Existing-number reuse, DND exclusions, scoped history/error downloads and suspension controls remain enforced. [Step 05 workflow and worker setup](docs/step-05-client-contacts.md).
+
+### Client audio library (Step 06)
+
+Clients can upload validated WAV recordings, listen/download privately, filter Pending/Approved/Rejected statuses, read rejection reasons and request another review. Internal reviewers retain approval control. Corrected content is uploaded as a new asset, preserving approved recordings and campaign snapshots. [Step 06 workflow and setup](docs/step-06-client-audio.md).

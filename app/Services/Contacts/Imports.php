@@ -9,6 +9,7 @@ use App\Models\ContactImport;
 use App\Models\User;
 use App\Services\Broadcast\Engine;
 use App\Services\Clients\AccountContext;
+use App\Services\Clients\Portal;
 use App\Services\Foundation;
 use App\Services\GhanaPhone;
 use Illuminate\Support\Facades\DB;
@@ -18,17 +19,27 @@ use Illuminate\Validation\ValidationException;
 
 class Imports
 {
+    private function authorize(User $u, $record): void
+    {
+        if ($u->isClient()) {
+            app(Portal::class)->authorize($u);
+            app(AccountContext::class)->assertOwned($u, $record);
+        } else {
+            Gate::forUser($u)->authorize('contacts.manage');
+        }
+    }
+
     public function access(User $u, ContactImport $batch): void
     {
-        Gate::forUser($u)->authorize('contacts.manage');
+        $this->authorize($u, $batch);
         app(AccountContext::class)->assertOwned($u, $batch);
-        abort_unless($batch->owner_id === $u->id || $u->isSuperAdministrator(), 403);
+        abort_unless($u->isClient() || $batch->owner_id === $u->id || $u->isSuperAdministrator(), 403);
     }
 
     public function stage(User $u, ContactGroup $group, string $filename, array $headers, array $rows): ContactImport
     {
-        Gate::forUser($u)->authorize('contacts.manage');
-        abort_unless($group->owner_id === $u->id || $u->isSuperAdministrator(), 403);
+        $this->authorize($u, $group);
+        abort_unless($u->isClient() || $group->owner_id === $u->id || $u->isSuperAdministrator(), 403);
         abort_unless($group->active, 422, 'Activate the group before importing.');
 
         return DB::transaction(function () use ($u, $group, $filename, $headers, $rows) {
@@ -108,7 +119,7 @@ class Imports
             }
             $u = User::findOrFail($b->owner_id);
             $group = ContactGroup::whereKey($b->contact_group_id)->lockForUpdate()->firstOrFail();
-            if (($b->client_account_id !== null && ! app(AccountContext::class)->active((int) $b->client_account_id)) || $b->client_account_id !== $group->client_account_id || ! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
+            if (($b->client_account_id !== null && ! app(AccountContext::class)->active((int) $b->client_account_id)) || $b->client_account_id !== $group->client_account_id || ! ($u->isClient() ? ($u->clientAccountActive() && $u->client_account_id === $b->client_account_id) : $u->can('contacts.manage')) || (! $u->isClient() && $group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
                 $b->update(['status' => 'blocked']);
 
                 return;
