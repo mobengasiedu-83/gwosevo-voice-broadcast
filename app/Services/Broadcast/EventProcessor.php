@@ -8,6 +8,7 @@ use App\Models\CallEvent;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
+use App\Services\Billing\Ledger;
 use Illuminate\Support\Facades\DB;
 
 class EventProcessor
@@ -93,6 +94,7 @@ class EventProcessor
                 }
                 if ($user === 'VBPlaybackFailed' && ! $a->playback_completed_at) {
                     $a->outcome = 'playback_failed';
+                    $a->playback_failed_at ??= now();
                 }
             }
             if ($name === 'UserEvent' && $user === 'VBTransferAnswered' && ($f['AttemptID'] ?? '') === $a->uuid && ($f['ParentUniqueid'] ?? '') === $a->uniqueid && $a->transfer_started_at) {
@@ -147,6 +149,7 @@ class EventProcessor
                 }
                 // If a leg existed, wait for its Hangup or reconcile rather than guessing it ended.
             }
+            app(Ledger::class)->settle($a->fresh());
             // AMI Response: Success means accepted, never answered or completed.
             $event->update(['processed_at' => now()]);
         });

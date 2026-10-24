@@ -1,11 +1,13 @@
 
 <?php
 
+use App\Http\Controllers\BillingController;
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ClientAccountController;
 use App\Http\Controllers\ClientAudioController;
 use App\Http\Controllers\ClientAuthController;
+use App\Http\Controllers\ClientCampaignController;
 use App\Http\Controllers\ClientContactsController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ContactWorkspaceController;
@@ -16,6 +18,28 @@ use App\Http\Controllers\InternalTestMediaController;
 use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\SessionController;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    $billing = BillingController::class;
+    Route::get('/client/wallet', [$billing, 'client'])->name('client.wallet');
+    Route::get('/billing', [$billing, 'index'])->name('billing.index');
+    Route::post('/billing/prices', [$billing, 'price'])->name('billing.price');
+    Route::post('/billing/accounts/{account}/rate', [$billing, 'assign'])->name('billing.assign');
+    Route::get('/billing/wallets/{wallet}', [$billing, 'show'])->name('billing.wallet');
+    Route::post('/billing/wallets/{wallet}/adjustments', [$billing, 'adjustment'])->name('billing.adjust');
+    Route::post('/billing/wallets/{wallet}/reservations/{reservation}', [$billing, 'resolve'])->whereNumber('reservation')->name('billing.resolve');
+});
+
+Route::middleware(['auth', 'throttle:30,1'])->prefix('client/campaigns')->name('client.campaigns.')->group(function () {
+    $c = ClientCampaignController::class;
+    Route::get('/create', [$c, 'edit'])->name('create');
+    Route::post('/create', [$c, 'save'])->name('store');
+    Route::get('/{campaign}', [$c, 'show'])->whereNumber('campaign')->name('show');
+    Route::get('/{campaign}/edit', [$c, 'edit'])->name('edit');
+    Route::post('/{campaign}/save', [$c, 'save'])->name('save');
+    Route::post('/{campaign}/control', [$c, 'control'])->name('control');
+    Route::post('/{campaign}/test', [$c, 'test'])->middleware('throttle:client-campaign-test')->name('test');
+});
 
 Route::middleware(['auth', 'throttle:client-audio'])->prefix('client/audio')->name('client.audio')->group(function () {
     $audio = ClientAudioController::class;

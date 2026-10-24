@@ -70,3 +70,15 @@ Step 05 needs no additional migration or role grants. Deploy the client contact 
 ## Step 06 — Client audio library
 
 No migration or new role grants are needed. Deploy the client audio controller/library/templates and shared audio service changes, then refresh caches/processes. Check private-storage write access and PHP/Apache upload limits. [Step 06 guide](step-06-client-audio.md).
+
+## Step 07 — Client campaigns
+
+No schema migration or new client permissions are required. Deploy the client campaign controller/service/templates and shared engine/gateway gates, refresh caches and restart long-running processes. Client execution defaults off; configure the restricted environment and authorized test numbers before enabling it. Existing `.env` values are unchanged. See [Step 07](step-07-client-campaigns.md). Real audible PBX acceptance and Stages 08–09 billing remain separate release requirements.
+
+## Stage 08 — Pricing and wallets
+
+Run the additive wallet migration and the `BillingPermissionsSeeder` and `DefaultRatePlanSeeder` seeders. They create financial tables/append-only guards, finance permissions and the owner-confirmed GHS 0.003/minute reference price; they do not assign accounts or grant balances. Billing admission defaults off. Assign prices, record verified manual credit and complete controlled acceptance before enabling `VOICE_BILLING_ENABLED`, then refresh caches and restart gateway/worker processes. [Stage 08 policy and deployment](step-08-wallet-billing.md).
+
+## Configurable billing policy
+
+Apply the additive `2026_10_24_040000_add_configurable_billing_policy` migration. Billing Administrators and Super Administrators can configure versioned prices, currency/precision, duration basis, rounding, failure treatment and actual-duration credit exposure at `/billing`. Assign a new policy version to an account for future launches. Actual-duration settlement requires verified duration evidence; existing runs and posted ledger entries retain their original policy. [Policy configuration](step-08-wallet-billing.md#administrator-configurable-billing-policies).

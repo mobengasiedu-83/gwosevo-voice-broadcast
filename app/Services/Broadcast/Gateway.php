@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
+use App\Services\Billing\Ledger;
 use App\Services\Clients\Accounts;
 use App\Services\Dashboard\QueueTelemetry;
 use Carbon\CarbonImmutable;
@@ -282,6 +283,16 @@ class Gateway
     {
         if (! app(Accounts::class)->campaignActive($campaign)) {
             $this->engine->terminal($a, 'account_suspended');
+
+            return false;
+        }
+        if ($campaign->client_account_id !== null && ! config('voice_broadcast.client_execution_enabled')) {
+            $this->engine->terminal($a, 'cancelled_before_send');
+
+            return false;
+        }
+        if (! app(Ledger::class)->canSend($a, $campaign, $s)) {
+            $this->engine->terminal($a, 'billing_blocked');
 
             return false;
         }

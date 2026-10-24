@@ -338,3 +338,13 @@ Clients can manage their account's contacts and groups, add/remove memberships, 
 ### Client audio library (Step 06)
 
 Clients can upload validated WAV recordings, listen/download privately, filter Pending/Approved/Rejected statuses, read rejection reasons and request another review. Internal reviewers retain approval control. Corrected content is uploaded as a new asset, preserving approved recordings and campaign snapshots. [Step 06 workflow and setup](docs/step-06-client-audio.md).
+
+### Client campaigns and scheduling (Step 07)
+
+Clients can create one-way campaigns with account-owned groups and approved audio, review DND eligibility, schedule execution, request restricted test runs and monitor answer/playback outcomes. Caller identity and capacity settings are controlled by the server. Existing approval, media integrity and dialing gates remain enforced. Execution defaults to disabled pending controlled acceptance. [Step 07 workflow, test destinations and deployment](docs/step-07-client-campaigns.md).
+
+### Pricing, wallets and billing ledger (Stage 08)
+
+Client wallets show balance, reserved/available credit, prices and transactions. Internal finance screens provide immutable price versions, audited manual adjustments/refunds and reconciliation. The default reference rate is **GHS 0.003 per minute (0.30 pesewas)**, using recording length rounded up to whole minutes for answered calls, including playback failures. Unanswered calls are free. Per-attempt reservations prevent competing campaigns from spending the same credit; uncertain outcomes retain funds for review. [Stage 08 policy, setup and financial controls](docs/step-08-wallet-billing.md).
+
+Billing Administrators and Super Administrators can configure new policy versions at `/billing`: currency/precision, price, recording or verified answered duration, rounding increments, playback-failure treatment and credit exposure. Existing runs retain their launch policy. [Configure billing policies](docs/step-08-wallet-billing.md#administrator-configurable-billing-policies).

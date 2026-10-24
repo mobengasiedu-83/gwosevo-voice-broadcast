@@ -10,8 +10,11 @@ use App\Models\CampaignRun;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Models\User;
+use App\Services\Billing\Ledger;
 use App\Services\Campaigns\Workspace;
+use App\Services\Clients\AccountContext;
 use App\Services\Clients\Accounts;
+use App\Services\Clients\Portal;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -51,7 +54,14 @@ class Engine
 
     public function control(User $actor, Campaign $campaign, string $action, bool $allowOwnedCampaign = false): void
     {
-        if ($action === 'emergency') {
+        if ($actor->isClient()) {
+            app(Portal::class)->authorize($actor);
+            app(AccountContext::class)->assertOwned($actor, $campaign);
+            abort_unless((int) $campaign->owner_id === (int) $actor->id, 403);
+            if (in_array($action, ['start', 'resume'], true)) {
+                abort_unless(config('voice_broadcast.client_execution_enabled'), 403, 'Client execution is disabled pending controlled acceptance.');
+            }
+        } elseif ($action === 'emergency') {
             abort_unless($actor->can('broadcast.emergency') || ($actor->can('campaigns.manage') && $campaign->owner_id === $actor->id), 403);
         } else {
             abort_unless(Gate::forUser($actor)->allows('broadcast.operate') || ($actor->can('campaigns.manage') && $campaign->owner_id === $actor->id), 403);
@@ -80,6 +90,9 @@ class Engine
                     $campaign->configuration = $config;
                     $snapshot = $campaign->only(['uuid', 'name', 'purpose', 'type', 'timezone', 'configuration']);
                     $snapshot['broadcast'] = $this->ready->snapshot($campaign);
+                    if ($billing = app(Ledger::class)->quote($campaign)) {
+                        $snapshot['broadcast']['billing'] = $billing;
+                    }
                     $version = $campaign->versions()->create([
                         'version' => ($campaign->versions()->max('version') ?? 0) + 1,
                         'snapshot' => $snapshot,
@@ -91,6 +104,9 @@ class Engine
                 $s = $version?->snapshot['broadcast'] ?? null;
                 if (! $s) {
                     $this->ready->fail('A complete campaign configuration is required before launch.');
+                }
+                if ($campaign->client_account_id !== null && config('billing.enabled') && empty($s['billing'])) {
+                    $this->ready->fail('Create a new priced execution before launch.');
                 }
                 $this->ready->liveAssets($s);
                 CampaignRun::firstOrCreate(['campaign_id' => $campaign->id], ['uuid' => (string) Str::uuid(), 'campaign_version_id' => $version->id, 'started_by' => $actor->id, 'snapshot' => $version->snapshot, 'created_at' => now()]);
@@ -143,7 +159,7 @@ class Engine
         Campaign::where('status', 'scheduled')->where('scheduled_at', '<=', now())->where('stop_requested', false)->update(['status' => 'running']);
         $campaigns = Campaign::where('status', 'running')->where('stop_requested', false)->orderBy('dispatch_score')->orderBy('last_dispatched_at')->orderBy('id')->get();
         foreach ($campaigns as $campaign) {
-            if (! app(Accounts::class)->campaignActive($campaign)) {
+            if (($campaign->client_account_id !== null && ! config('voice_broadcast.client_execution_enabled')) || ! app(Accounts::class)->campaignActive($campaign)) {
                 continue;
             }
             $s = CampaignVersion::findOrFail($campaign->active_version_id)->snapshot['broadcast'];
@@ -172,6 +188,10 @@ class Engine
                 }
                 $uuid = (string) Str::uuid();
                 $attempt = CallAttempt::create(['uuid' => $uuid, 'action_id' => 'vb-'.$uuid, 'uniqueid' => $uuid, 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $campaign->active_version_id, 'trunk_profile_id' => $trunk->id, 'token' => bin2hex(random_bytes(32)), 'state' => 'authorizing', 'attempt_no' => (CallAttempt::where('campaign_recipient_id', $recipient->id)->max('attempt_no') ?? 0) + 1]);
+                if (! app(Ledger::class)->reserve($attempt, $campaign, $s)) {
+                    $attempt->delete();
+                    break;
+                }
                 DB::table('channel_reservations')->insert(['call_attempt_id' => $attempt->id, 'campaign_id' => $campaign->id, 'trunk_profile_id' => $trunk->id, 'acquired_at' => now()]);
                 $recipient->update(['status' => 'reserved']);
                 $campaign->update(['last_dispatched_at' => now()->format('Y-m-d H:i:s.u'), 'dispatch_score' => $campaign->dispatch_score + 1 / max(1, $campaign->priority)]);
@@ -202,6 +222,7 @@ class Engine
         if (! app(CampaignPolicy::class)->retry($attempt, $outcome)) {
             $recipient->update(['status' => 'terminal']);
         }
+        app(Ledger::class)->settle($attempt);
         $this->complete($recipient->campaign_id);
     }
 
@@ -222,6 +243,9 @@ class Engine
             $ids = CallAttempt::whereNotNull('uuid')->whereNull('ended_at')->pluck('campaign_recipient_id');
             CallAttempt::whereNotNull('uuid')->whereNull('ended_at')->update(['state' => 'unknown', 'outcome' => 'reconciling']);
             CampaignRecipient::whereIn('id', $ids)->update(['status' => 'unknown']);
+            foreach (CallAttempt::where('state', 'unknown')->whereNull('ended_at')->get() as $uncertain) {
+                app(Ledger::class)->settle($uncertain);
+            }
         });
     }
 }

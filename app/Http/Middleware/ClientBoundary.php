@@ -18,7 +18,7 @@ class ClientBoundary
                 $request->session()->regenerateToken();
                 abort(403, 'Client account is suspended or unavailable.');
             }
-            abort_unless($request->routeIs('client.audio', 'client.audio.*', 'client.contacts', 'client.contacts.*', 'client.groups', 'client.groups.*', 'client.imports', 'client.imports.*', 'client.foundation', 'client.campaigns', 'client.notifications', 'client.notifications.read', 'client.notifications.read-all', 'client.settings', 'client.settings.update', 'logout'), 403, 'This internal workspace is not available to client accounts.');
+            abort_unless($request->routeIs('client.wallet', 'client.audio', 'client.audio.*', 'client.contacts', 'client.contacts.*', 'client.groups', 'client.groups.*', 'client.imports', 'client.imports.*', 'client.foundation', 'client.campaigns', 'client.campaigns.*', 'client.notifications', 'client.notifications.read', 'client.notifications.read-all', 'client.settings', 'client.settings.update', 'logout'), 403, 'This internal workspace is not available to client accounts.');
         }
 
         $response = $next($request);

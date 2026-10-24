@@ -15,7 +15,8 @@ class RolesAndPermissionsSeeder extends Seeder
         Permission::findOrCreate('clients.manage', 'web');
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $matrix = [
-            'Super Administrator' => ['clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
+            'Super Administrator' => ['billing.manage', 'billing.view', 'clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
+            'Billing Administrator' => ['billing.manage', 'billing.view'],
             'Telephony Administrator' => ['telephony.view', 'telephony.manage'],
             'Campaign Manager' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage'],
             'Approver' => ['campaigns.view', 'campaigns.approve', 'audio.approve'],
@@ -25,6 +26,9 @@ class RolesAndPermissionsSeeder extends Seeder
         ];
         foreach ($matrix as $role => &$permissions) {
             $permissions[] = 'dashboard.view';
+            if ($role === 'Billing Administrator') {
+                continue;
+            }
             $permissions[] = 'dashboard.live';
             if ($role !== 'Campaign Manager') {
                 $permissions[] = 'dashboard.global';

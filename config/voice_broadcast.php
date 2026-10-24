@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'client_execution_enabled' => env('VOICE_BROADCAST_CLIENT_EXECUTION_ENABLED', false),
+    'client_test_numbers' => array_values(array_filter(array_map('trim', explode(',', env('VOICE_BROADCAST_CLIENT_TEST_NUMBERS', ''))))),
     'media_mode' => env('VOICE_BROADCAST_MEDIA_MODE', 'pbx'),
     'media_base_url' => env('VOICE_BROADCAST_MEDIA_BASE_URL'),
     'enabled' => env('VOICE_BROADCAST_ENABLED', false),

@@ -25,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('client-campaign-test', fn (Request $request) => Limit::perMinute(3)->by('client-test:'.($request->user()?->id ?? $request->ip())));
         RateLimiter::for('client-audio', function (Request $request) {
             return Limit::perMinute($request->isMethod('GET') ? 120 : 10)->by($request->user()?->id.'|'.$request->ip());
         });
