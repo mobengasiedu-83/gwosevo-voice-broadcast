@@ -26,4 +26,9 @@ class Client extends Model
     {
         return $this->hasMany(ClientMembership::class);
     }
+    public function campaigns() { return $this->hasMany(Campaign::class); }
+    public function contacts() { return $this->hasMany(Contact::class); }
+    public function imports() { return $this->hasMany(ContactImport::class); }
+    public function recordings() { return $this->hasMany(AudioFile::class); }
+
 }

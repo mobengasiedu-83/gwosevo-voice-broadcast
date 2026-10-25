@@ -54,3 +54,5 @@ sudo find . -type d -exec chmod 755 {} \;
 sudo find . -type f -exec chmod 644 {} \;
 sudo chmod 600 .env
 sudo chmod -R u+rwX,go-rwx storage bootstrap/cache
+
+review module 7 and apply any missing features and functions.
