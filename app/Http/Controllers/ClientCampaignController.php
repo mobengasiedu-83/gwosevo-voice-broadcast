@@ -78,9 +78,9 @@ class ClientCampaignController extends Controller
         $billingPreview = null;
         $billingIssue = null;
         try {
-            $billingPreview = $campaign->active_version_id
+            $billingPreview = ! $request->user()->clientCan('billing.read') ? null : ($campaign->active_version_id
                 ? $campaign->versions()->whereKey($campaign->active_version_id)->first()?->snapshot['broadcast']['billing'] ?? null
-                : app(Ledger::class)->quote($campaign);
+                : app(Ledger::class)->quote($campaign));
         } catch (ValidationException $e) {
             $billingIssue = 'A configured price and sufficient available credit are required. Review your wallet or contact support.';
         }
@@ -91,7 +91,7 @@ class ClientCampaignController extends Controller
             'campaign' => $campaign, 'technicalReady' => $technicalReady, 'eligibility' => $workspace->eligibility($campaign),
             'selectedAudio' => AudioFile::find($campaign->configuration['audio_id'] ?? null),
             'group' => ContactGroup::find($campaign->configuration['source_group_id'] ?? null),
-            'mayManage' => (int) $campaign->owner_id === (int) $request->user()->id,
+            'mayManage' => $request->user()->clientCan('campaigns.operate') && ((int) $campaign->owner_id === (int) $request->user()->id || in_array($request->user()->client_role, ['owner', 'administrator', 'operator'], true)),
             'executionEnabled' => (bool) config('voice_broadcast.client_execution_enabled'),
             'attempts' => (clone $attempts)->latest('id')->paginate(25, ['id', 'attempt_no', 'state', 'outcome', 'answered_at', 'playback_started_at', 'playback_completed_at', 'ended_at']),
             'totals' => ['attempts' => (clone $attempts)->count(), 'answered' => (clone $attempts)->whereNotNull('answered_at')->count(), 'playback' => (clone $attempts)->whereNotNull('playback_completed_at')->count()],

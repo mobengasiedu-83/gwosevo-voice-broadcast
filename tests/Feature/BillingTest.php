@@ -550,4 +550,31 @@ class BillingTest extends TestCase
         $this->assertSame(1, WalletLedgerEntry::where('kind', 'call_charge')->count());
         $this->assertTrue($this->ledger->reconciliation($this->wallet->fresh())['matches']);
     }
+
+    public function test_account_spending_cap_blocks_reservation_and_is_rechecked_before_network_send(): void
+    {
+        $this->fund();
+        $campaign = $this->campaign();
+        ClientAccount::whereKey($this->client->client_account_id)->update(['daily_spend_limit_minor' => 5]);
+        $this->assertNull($this->reserve());
+        $this->assertSame(0, (int) $this->wallet->fresh()->reserved_minor);
+        ClientAccount::whereKey($this->client->client_account_id)->update(['daily_spend_limit_minor' => 6]);
+        $attempt = $this->reserve();
+        $this->assertNotNull($attempt);
+        $snapshot = $campaign->versions()->whereKey($campaign->active_version_id)->first()->snapshot['broadcast'];
+        $this->assertTrue($this->ledger->canSend($attempt, $campaign, $snapshot));
+        ClientAccount::whereKey($this->client->client_account_id)->update(['daily_spend_limit_minor' => 0]);
+        $this->assertFalse($this->ledger->canSend($attempt, $campaign, $snapshot));
+        $this->assertSame(1, WalletLedgerEntry::count()); // Funding only; no call charge was posted.
+    }
+
+    public function test_account_dispatch_restriction_stops_new_admission_after_launch(): void
+    {
+        $this->fund();
+        $campaign = $this->campaign();
+        ClientAccount::whereKey($this->client->client_account_id)->update(['dispatch_blocked' => true]);
+        $this->assertNull($this->reserve());
+        $this->assertSame('running', $campaign->fresh()->status);
+        $this->assertSame(0, CallAttempt::count());
+    }
 }

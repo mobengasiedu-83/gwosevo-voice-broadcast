@@ -15,7 +15,7 @@
 <p>Need a recording? <a href="{{ route('client.audio') }}">Upload audio and wait for internal approval.</a></p>
 </fieldset>
 <fieldset><legend>2 · Schedule and calling window</legend>
-<div class="form-field"><label for="timezone">Timezone</label><select id="timezone" name="timezone" required>@foreach(timezone_identifiers_list() as $zone)<option @selected(old('timezone', $campaign?->timezone ?? 'Africa/Accra') === $zone)>{{ $zone }}</option>@endforeach</select></div>
+<div class="form-field"><label for="timezone">Timezone</label><select id="timezone" name="timezone" required>@foreach(timezone_identifiers_list() as $zone)<option @selected(old('timezone', $campaign?->timezone ?? ($account->settings['timezone'] ?? 'Africa/Accra')) === $zone)>{{ $zone }}</option>@endforeach</select></div>
 <div class="form-field"><label for="scheduled_at">Start time in selected timezone (optional)</label><input type="datetime-local" id="scheduled_at" name="scheduled_at" value="{{ old('scheduled_at', empty($config['scheduled_at']) ? '' : \Carbon\CarbonImmutable::parse($config['scheduled_at'])->format('Y-m-d\TH:i')) }}"></div>
 <p>Leave blank to start when you confirm launch. A future schedule is armed only after you click Start.</p>
 <div class="form-field"><label for="window_start">Daily calling window starts</label><input type="time" id="window_start" name="window_start" required value="{{ old('window_start', $config['window_start'] ?? '08:00') }}"></div>

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletLedgerEntry;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\Management;
 use App\Services\Foundation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -181,6 +182,10 @@ class Ledger
         }
         $policy = $snapshot['billing'] ?? null;
         if (! $policy) {
+            if (ClientAccount::whereKey($campaign->client_account_id)->whereNotNull('daily_spend_limit_minor')->exists()) {
+                return false;
+            }
+
             return ! config('billing.enabled') && ! Wallet::where('client_account_id', $campaign->client_account_id)->exists(); // No repricing of legacy runs.
         }
         if (! config('billing.enabled')) {
@@ -194,6 +199,9 @@ class Ledger
             return false;
         }
         $amount = (int) $policy['call_charge_minor'];
+        if (! app(Management::class)->spendAllowed($campaign->client_account_id, $wallet, $amount, $attempt->id)) {
+            return false;
+        }
         $existing = DB::table('wallet_reservations')->where('call_attempt_id', $attempt->id)->first();
         if ($existing) {
             return $existing->status === 'held';
@@ -214,6 +222,10 @@ class Ledger
         }
         $policy = $snapshot['billing'] ?? null;
         if (! $policy) {
+            if (ClientAccount::whereKey($campaign->client_account_id)->whereNotNull('daily_spend_limit_minor')->exists()) {
+                return false;
+            }
+
             return ! config('billing.enabled') && ! Wallet::where('client_account_id', $campaign->client_account_id)->exists();
         }
         if (! config('billing.enabled')) {
@@ -225,7 +237,7 @@ class Ledger
         }
         $reservation = DB::table('wallet_reservations')->where('wallet_id', $wallet->id)->where('call_attempt_id', $attempt->id)->first();
 
-        return $reservation && $reservation->status === 'held' && (int) $reservation->held_minor === (int) $policy['call_charge_minor'] && json_decode($reservation->policy, true) === $policy;
+        return app(Management::class)->spendAllowed($campaign->client_account_id, $wallet, (int) $policy['call_charge_minor'], $attempt->id) && $reservation && $reservation->status === 'held' && (int) $reservation->held_minor === (int) $policy['call_charge_minor'] && json_decode($reservation->policy, true) === $policy;
     }
 
     public function settle(CallAttempt $attempt): void

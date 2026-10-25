@@ -1,0 +1,701 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "VoiceCast Client API",
+    "version": "1.0.0",
+    "description": "Account-scoped integrations. Draft creation never starts calls. See ../step-12-integrations.md for operational and webhook contracts."
+  },
+  "servers": [
+    {
+      "url": "https://voicecast.example/api/v1",
+      "description": "Replace with your accepted deployment"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/contacts": {
+      "get": {
+        "summary": "List contacts",
+        "description": "Required scope: contacts.read",
+        "operationId": "list_contacts",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "contacts.read"
+      }
+    },
+    "/groups": {
+      "get": {
+        "summary": "List active groups",
+        "description": "Required scope: contacts.read",
+        "operationId": "list_active_groups",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "contacts.read"
+      }
+    },
+    "/contact-imports": {
+      "post": {
+        "summary": "Stage contact import",
+        "description": "Required scope: contacts.write",
+        "operationId": "stage_contact_import",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "contacts.write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "group_id",
+                  "rows"
+                ],
+                "properties": {
+                  "group_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "rows": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "phone"
+                      ],
+                      "properties": {
+                        "phone": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "source": {
+                          "type": "string",
+                          "maxLength": 255
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact-imports/{id}": {
+      "get": {
+        "summary": "Read import status",
+        "description": "Required scope: contacts.read",
+        "operationId": "read_import_status",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "contacts.read"
+      }
+    },
+    "/contact-imports/{id}/confirm": {
+      "post": {
+        "summary": "Confirm import",
+        "description": "Required scope: contacts.write",
+        "operationId": "confirm_import",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "contacts.write"
+      }
+    },
+    "/campaigns": {
+      "get": {
+        "summary": "List campaigns",
+        "description": "Required scope: campaigns.read",
+        "operationId": "list_campaigns",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "campaigns.read"
+      },
+      "post": {
+        "summary": "Create one way draft",
+        "description": "Required scope: campaigns.write",
+        "operationId": "create_one_way_draft",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "campaigns.write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "purpose",
+                  "source_group_id",
+                  "audio_id",
+                  "timezone",
+                  "window_start",
+                  "window_end",
+                  "max_attempts",
+                  "retry_delay_seconds"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 240
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "source_group_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "audio_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "timezone": {
+                    "type": "string"
+                  },
+                  "window_start": {
+                    "type": "string",
+                    "pattern": "^[0-9]{2}:[0-9]{2}$"
+                  },
+                  "window_end": {
+                    "type": "string",
+                    "pattern": "^[0-9]{2}:[0-9]{2}$"
+                  },
+                  "max_attempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "retry_delay_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 86400
+                  },
+                  "retry_outcomes": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                      "enum": [
+                        "busy",
+                        "no_answer",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "excluded_dates_text": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "expires_on": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}": {
+      "get": {
+        "summary": "Read campaign",
+        "description": "Required scope: campaigns.read",
+        "operationId": "read_campaign",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "campaigns.read"
+      }
+    },
+    "/reports": {
+      "get": {
+        "summary": "Read report",
+        "description": "Required scope: reports.read",
+        "operationId": "read_report",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "campaigns",
+                "attempts",
+                "ivr",
+                "billing"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "timezone",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Invalid, expired or revoked credential"
+          },
+          "403": {
+            "description": "Missing scope or inactive account"
+          },
+          "404": {
+            "description": "Record unavailable in account"
+          },
+          "409": {
+            "description": "Idempotency conflict or expired key"
+          },
+          "413": {
+            "description": "Request exceeds 1 MiB"
+          },
+          "422": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Quota exceeded"
+          },
+          "503": {
+            "description": "API disabled"
+          }
+        },
+        "x-required-scope": "reports.read"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "vc_UUID.SECRET"
+      }
+    }
+  }
+}

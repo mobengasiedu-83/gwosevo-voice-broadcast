@@ -12,6 +12,7 @@ use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\Engine;
 use App\Services\Campaigns\Workspace;
 use App\Services\Foundation;
+use App\Services\Integrations\Webhooks;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -69,6 +70,11 @@ class BroadcastController extends Controller
             if ($data['action'] === 'stop') {
                 $ids = Campaign::whereIn('status', ['running', 'paused', 'scheduled'])->pluck('id');
                 Campaign::whereIn('id', $ids)->update(['status' => 'cancelled', 'stop_requested' => true]);
+                Campaign::whereIn('id', $ids)->chunkById(200, function ($campaigns) {
+                    foreach ($campaigns as $campaign) {
+                        app(Webhooks::class)->capture($campaign);
+                    }
+                });
                 CampaignRecipient::whereIn('campaign_id', $ids)->where('status', 'pending')->update(['status' => 'cancelled']);
             }
             $audit->audit($request->user(), 'broadcast.global_'.$data['action'], $request->user());

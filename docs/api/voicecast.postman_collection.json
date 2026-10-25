@@ -1,0 +1,218 @@
+{
+  "info": {
+    "name": "VoiceCast Stage 12",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run only against an explicitly selected test deployment. POSTs create drafts and stage/confirm imports; they do not launch calls. Supply fixture IDs and a scoped credential locally. Use a fixed Idempotency-Key to test replay."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://voicecast.example/api/v1"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "record_id",
+      "value": "1"
+    },
+    {
+      "key": "group_id",
+      "value": "1"
+    },
+    {
+      "key": "audio_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "List contacts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/contacts",
+        "description": "Required scope: contacts.read"
+      }
+    },
+    {
+      "name": "List active groups",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/groups",
+        "description": "Required scope: contacts.read"
+      }
+    },
+    {
+      "name": "Stage contact import",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{base_url}}/contact-imports",
+        "description": "Required scope: contacts.write",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"group_id\": \"{{group_id}}\",\n  \"rows\": [\n    {\n      \"phone\": \"0241234567\",\n      \"name\": \"Controlled test contact\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Read import status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/contact-imports/{{record_id}}",
+        "description": "Required scope: contacts.read"
+      }
+    },
+    {
+      "name": "Confirm import",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{base_url}}/contact-imports/{{record_id}}/confirm",
+        "description": "Required scope: contacts.write",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "List campaigns",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/campaigns",
+        "description": "Required scope: campaigns.read"
+      }
+    },
+    {
+      "name": "Create one way draft",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "url": "{{base_url}}/campaigns",
+        "description": "Required scope: campaigns.write",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Integration draft\",\n  \"purpose\": \"Controlled acceptance\",\n  \"source_group_id\": \"{{group_id}}\",\n  \"audio_id\": \"{{audio_id}}\",\n  \"timezone\": \"Africa/Accra\",\n  \"window_start\": \"08:00\",\n  \"window_end\": \"18:00\",\n  \"max_attempts\": 1,\n  \"retry_delay_seconds\": 60\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Read campaign",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/campaigns/{{record_id}}",
+        "description": "Required scope: campaigns.read"
+      }
+    },
+    {
+      "name": "Read report",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/reports",
+        "description": "Required scope: reports.read"
+      }
+    }
+  ]
+}

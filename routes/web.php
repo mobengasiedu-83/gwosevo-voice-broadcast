@@ -10,16 +10,60 @@ use App\Http\Controllers\ClientAudioController;
 use App\Http\Controllers\ClientAuthController;
 use App\Http\Controllers\ClientCampaignController;
 use App\Http\Controllers\ClientContactsController;
+use App\Http\Controllers\ClientManagementController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FoundationController;
+use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\InteractiveController;
 use App\Http\Controllers\InternalTestMediaController;
 use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SessionController;
+use App\Services\Clients\Management;
 use Illuminate\Support\Facades\Route;
+
+// Canonical internal client profiles and delegated organization administration.
+Route::middleware(['guest', 'throttle:10,1'])->group(function () {
+    Route::get('/client-invitations/{uuid}/{token}', [ClientManagementController::class, 'invitation'])->whereUuid('uuid')->where('token', '[A-Za-z0-9]{64}')->name('client.invitation');
+    Route::post('/client-invitations/{uuid}/{token}', [ClientManagementController::class, 'invitation'])->whereUuid('uuid')->where('token', '[A-Za-z0-9]{64}')->name('client.invitation.accept');
+});
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    $c = ClientManagementController::class;
+    Route::get('/client-management/{section?}', [$c, 'index'])->name('client-management.index');
+    Route::get('/client-accounts/export', [$c, 'export'])->name('clients.accounts.export');
+    Route::get('/client-accounts/{account}', [$c, 'show'])->whereNumber('account')->name('clients.accounts.show');
+    Route::get('/client/organization', [$c, 'organization'])->name('client.organization');
+    Route::get('/client/team', [$c, 'team'])->name('client.team');
+    Route::post('/client-management/registrations/{challenge}/resend', [$c, 'resend'])->whereUuid('challenge')->name('client-management.resend');
+    foreach (['client-accounts' => 'clients.accounts', 'client/organization' => 'client.organization'] as $path => $name) {
+        Route::post($path.'/{account}/profile', [$c, 'profile'])->name($name.'.profile');
+        Route::post($path.'/{account}/settings', [$c, 'settings'])->name($name.'.settings');
+        Route::post($path.'/{account}/members/{member}', [$c, 'member'])->name($name.'.member');
+        Route::post($path.'/{account}/members/{member}/sessions', [$c, 'sessions'])->name($name.'.sessions');
+        Route::post($path.'/{account}/members/{member}/recovery', [$c, 'recovery'])->name($name.'.recovery');
+        Route::post($path.'/{account}/invitations', [$c, 'invite'])->name($name.'.invite');
+        Route::post($path.'/{account}/invitations/{invitation}/revoke', [$c, 'revokeInvitation'])->whereNumber('invitation')->name($name.'.invitation.revoke');
+        Route::post($path.'/{account}/documents', [$c, 'upload'])->name($name.'.documents.upload');
+        Route::get($path.'/{account}/documents/{document}', [$c, 'download'])->whereUuid('document')->name($name.'.documents.download');
+    }
+    Route::post('/client-accounts/{account}/restrictions', [$c, 'restrictions'])->name('clients.accounts.restrictions');
+    Route::post('/client-accounts/{account}/business-review', [$c, 'review'])->name('clients.accounts.review');
+});
+
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    $c = IntegrationController::class;
+    Route::get('/client/integrations', [$c, 'index'])->name('client.integrations');
+    Route::post('/client/integrations/credentials', [$c, 'issue'])->name('client.integrations.issue');
+    Route::post('/client/integrations/credentials/{id}', [$c, 'credential'])->whereNumber('id')->name('client.integrations.credential');
+    Route::post('/client/integrations/webhooks', [$c, 'subscribe'])->name('client.integrations.subscribe');
+    Route::post('/client/integrations/webhooks/{id}', [$c, 'subscription'])->whereNumber('id')->name('client.integrations.subscription');
+    Route::post('/client/integrations/deliveries/{id}/retry', [$c, 'retry'])->whereNumber('id')->name('client.integrations.retry');
+    Route::get('/integration-plans', [$c, 'plans'])->name('integrations.plans');
+    Route::post('/integration-plans', [$c, 'plan'])->name('integrations.plan');
+    Route::post('/integration-plans/accounts/{account}', [$c, 'assign'])->whereNumber('account')->name('integrations.assign');
+});
 
 foreach (['client/campaigns/series' => 'client.campaigns.series', 'campaign-series' => 'campaign-series'] as $prefix => $name) {
     Route::middleware(['auth', 'throttle:30,1'])->prefix($prefix)->name($name)->group(function () {

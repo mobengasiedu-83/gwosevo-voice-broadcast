@@ -22,13 +22,14 @@ class Campaigns
         $id = app(Portal::class)->authorize($actor);
         abort_unless((int) $campaign->client_account_id === $id, 404);
         if ($manage) {
-            abort_unless((int) $campaign->owner_id === (int) $actor->id, 403);
+            abort_unless((int) $campaign->owner_id === (int) $actor->id || in_array($actor->client_role, ['owner', 'administrator', 'operator'], true), 403);
         }
     }
 
     public function save(User $actor, ?Campaign $campaign, array $data): Campaign
     {
         $id = app(Portal::class)->authorize($actor);
+        abort_unless($actor->clientCan('campaigns.write'), 403);
 
         return DB::transaction(function () use ($actor, $campaign, $data, $id) {
             app(Engine::class)->mutex();
@@ -60,6 +61,7 @@ class Campaigns
 
     public function control(User $actor, Campaign $campaign, string $action, string $reason): void
     {
+        abort_unless($actor->clientCan('campaigns.operate'), 403);
         DB::transaction(function () use ($actor, $campaign, $action, $reason) {
             app(Engine::class)->mutex();
             $campaign = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
@@ -81,6 +83,8 @@ class Campaigns
 
     public function test(User $actor, Campaign $campaign, int $contactId): Campaign
     {
+        abort_unless($actor->clientCan('campaigns.operate'), 403);
+
         return DB::transaction(function () use ($actor, $campaign, $contactId) {
             app(Engine::class)->mutex();
             $campaign = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();

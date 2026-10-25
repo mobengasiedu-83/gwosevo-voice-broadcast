@@ -19,6 +19,7 @@ class Recurring
     public function authorize(User $user, Campaign $campaign): void
     {
         if ($user->isClient()) {
+            abort_unless($user->clientCan('campaigns.write'), 403);
             app(Campaigns::class)->access($user, $campaign, true);
         } else {
             Gate::forUser($user)->authorize('campaigns.manage');

@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\CallAttempt;
+use App\Models\Campaign;
 use App\Models\User;
 use App\Services\Clients\AccountContext;
+use App\Services\Integrations\Webhooks;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -25,6 +28,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        foreach ([Campaign::class, CallAttempt::class] as $model) {
+            $model::saved(fn ($record) => app(Webhooks::class)->capture($record));
+        }
         RateLimiter::for('client-campaign-test', fn (Request $request) => Limit::perMinute(3)->by('client-test:'.($request->user()?->id ?? $request->ip())));
         RateLimiter::for('client-audio', function (Request $request) {
             return Limit::perMinute($request->isMethod('GET') ? 120 : 10)->by($request->user()?->id.'|'.$request->ip());

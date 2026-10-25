@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Services\Clients\AccountContext;
+use App\Services\Clients\Capabilities;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -59,6 +60,8 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
+            'client_access_enabled' => 'boolean',
+            'last_login_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'terms_accepted_at' => 'datetime',
             'phone_verified_at' => 'datetime',
@@ -87,7 +90,12 @@ class User extends Authenticatable
 
     public function clientAccountActive(): bool
     {
-        return $this->client_account_id !== null && app(AccountContext::class)->active((int) $this->client_account_id);
+        return $this->client_account_id !== null && $this->client_access_enabled !== false && app(AccountContext::class)->active((int) $this->client_account_id);
+    }
+
+    public function clientCan(string $ability): bool
+    {
+        return Capabilities::allows($this, $ability);
     }
 
     public function isSuperAdministrator(): bool

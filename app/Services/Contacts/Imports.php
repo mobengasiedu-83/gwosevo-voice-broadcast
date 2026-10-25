@@ -119,7 +119,7 @@ class Imports
             }
             $u = User::findOrFail($b->owner_id);
             $group = ContactGroup::whereKey($b->contact_group_id)->lockForUpdate()->firstOrFail();
-            if (($b->client_account_id !== null && ! app(AccountContext::class)->active((int) $b->client_account_id)) || $b->client_account_id !== $group->client_account_id || ! ($u->isClient() ? ($u->clientAccountActive() && $u->client_account_id === $b->client_account_id) : $u->can('contacts.manage')) || (! $u->isClient() && $group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
+            if (($b->client_account_id !== null && ! app(AccountContext::class)->active((int) $b->client_account_id)) || $b->client_account_id !== $group->client_account_id || ! ($u->isClient() ? ($u->clientCan('contacts.write') && $u->client_account_id === $b->client_account_id) : $u->can('contacts.manage')) || (! $u->isClient() && $group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
                 $b->update(['status' => 'blocked']);
 
                 return;

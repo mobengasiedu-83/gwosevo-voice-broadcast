@@ -27,7 +27,7 @@ class Accounts
 
     public function setStatus(User $actor, ClientAccount $account, string $status, string $reason): void
     {
-        Gate::forUser($actor)->authorize('clients.manage');
+        abort_unless(! $actor->isClient() && ($actor->can('clients.manage') || $actor->can('clients.restrict')), 403);
         abort_unless(in_array($status, ['active', 'suspended'], true) && trim($reason) !== '', 422);
         DB::transaction(function () use ($actor, $account, $status, $reason) {
             app(Engine::class)->mutex();
@@ -50,6 +50,6 @@ class Accounts
     {
         $id = $campaign->client_account_id;
 
-        return $id === null || app(AccountContext::class)->active((int) $id);
+        return $id === null || app(Management::class)->dispatchAllowed($campaign);
     }
 }

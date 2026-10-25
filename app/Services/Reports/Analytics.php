@@ -18,6 +18,7 @@ class Analytics
     {
         if ($user->isClient()) {
             app(Portal::class)->authorize($user);
+            abort_unless($user->clientCan($kind === 'billing' ? 'billing.read' : 'reports.read') && ($kind === 'billing' || $user->client_role !== 'finance'), 403);
         } else {
             Gate::forUser($user)->authorize($kind === 'billing' ? 'billing.view' : 'reports.view');
         }
@@ -25,11 +26,11 @@ class Analytics
 
     public function filters(User $user, array $input): array
     {
-        $zone = $input['timezone'] ?? 'Africa/Accra';
+        $zone = $input['timezone'] ?? ($user->isClient() ? ($user->clientAccount?->settings['timezone'] ?? 'Africa/Accra') : 'Africa/Accra');
         if (! in_array($zone, timezone_identifiers_list(), true)) {
             $zone = 'Africa/Accra';
         }
-        $defaults = ['kind' => ! $user->isClient() && ! $user->can('reports.view') ? 'billing' : 'campaigns', 'timezone' => 'Africa/Accra', 'from' => now($zone)->subDays(29)->format('Y-m-d'), 'to' => now($zone)->format('Y-m-d')];
+        $defaults = ['kind' => ($user->isClient() ? $user->client_role === 'finance' : ! $user->can('reports.view')) ? 'billing' : 'campaigns', 'timezone' => $zone, 'from' => now($zone)->subDays(29)->format('Y-m-d'), 'to' => now($zone)->format('Y-m-d')];
         $data = Validator::make(array_replace($defaults, $input), [
             'kind' => 'required|in:campaigns,attempts,billing,ivr', 'timezone' => 'required|timezone',
             'from' => 'required|date_format:Y-m-d', 'to' => 'required|date_format:Y-m-d|after_or_equal:from',

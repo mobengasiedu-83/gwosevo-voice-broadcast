@@ -19,7 +19,7 @@ The core client workflow and billing ledger have been implemented. The remaining
 | 09 Payments and top-ups | Deferred at owner's request on 24 October | Provider verification and complete payment workflow before online paid launch |
 | 10 Notifications and reports | Implemented | Production scheduler/workers, verified channel acceptance and permission/export UAT |
 | 11 Advanced campaigns and IVR | Implemented | Production recurrence acceptance and approval/install/checksum verification for new IVR telemetry |
-| 12 APIs webhooks and commercial scale | Partial foundation | Credential lifecycle, webhooks, commercial administration, tests, documentation and load/recovery acceptance |
+| 12 APIs webhooks and commercial scale | Implemented in repository on 25 October | Target-database migration, controlled receiver/security acceptance and measured production load/recovery acceptance |
 
 Evidence: [Steps 02–03](step-02-client-foundation.md), [authentication](step-03-client-authentication.md), [portal](step-04-client-portal.md), [contacts](step-05-client-contacts.md), [audio](step-06-client-audio.md), [campaigns](step-07-client-campaigns.md), [billing](step-08-wallet-billing.md), [reports](step-10-notifications-reports.md), [advanced campaigns](step-11-advanced-campaigns-ivr.md).
 
@@ -69,22 +69,18 @@ Priority P1; required before online paid launch. Depends on the implemented Stag
 
 Completion gate: only verified successful payments fund once, and provider transactions reconcile with ledger postings. Existing manual finance adjustments remain available to authorized staff and do not count as gateway integration.
 
-### 4 Complete Stage 12 external integration
+### 4 Deploy and accept Stage 12 external integration
 
-Priority P2 after core release gates; no need to delay non-API client UAT for this stage.
+Repository implementation and both local MySQL migrations completed on 25 October 2026. [Stage 12 guide](step-12-integrations.md) documents credential issuance/rotation/revocation, scoped/idempotent API writes, account quotas and plan administration, transactional event capture, signed bounded webhook delivery, SSRF controls, delivery history/reconciliation, retention, OpenAPI and Postman examples. API and webhook delivery remain disabled by default.
 
-Existing source includes `/api/v1` contact/group reads, staged contact imports/confirmation, campaign drafts/status and reports; scoped expiring credential issuance service; credential/idempotency middleware; usage limits; and tables for plans and webhooks. API and webhook delivery configuration defaults off.
+- [x] **API-01 Credential lifecycle:** client management with one-time secrets, rotation/revocation, expiry and audit.
+- [x] **API-02 API hardening and regression coverage:** isolation, scopes, suspension, quota rollback, payload limits, draft-only writes and replay tests.
+- [x] **API-03 Signed webhooks:** outbox, subscription lifecycle, pinned public HTTPS destinations, signing, retry/backoff, unknown-send handling and history.
+- [x] **API-04 Commercial plan administration:** bounded account quota plans, audited assignments and usage visibility.
+- [x] **API-05 Operations and documentation:** scheduler/status commands, retention, sanitized logs, OpenAPI, Postman and deployment/recovery instructions.
+- [ ] **API-06 Deployment and operational acceptance:** apply the migrations on the target database; verify real receiver/security scenarios, measure production throughput/tenant fairness and demonstrate restore/recovery. The local backlog smoke test is not production scale certification.
 
-- [ ] **API-01 Credential lifecycle:** add authorized issuance/list/revocation/rotation management, expiry and audit UX or a documented provisioning interface. The issuance service alone is not a complete client lifecycle.
-- [ ] **API-02 API hardening and regression coverage:** verify account/scope/suspension boundaries, revocation, quotas, malformed/oversized requests, concurrent idempotency/replay, imports and draft-only behavior. Review failure/rollback and usage-counter behavior. No dedicated integration test file was found in the reviewed tree.
-- [ ] **API-03 Signed webhooks:** implement subscription management, protected secret lifecycle, event production, signed delivery jobs, bounded retries/backoff, replay identifiers, delivery history and reconciliation. Validate outbound destinations against SSRF/private-network access and redirects. The reviewed tree has webhook schema/configuration but no delivery job or scheduled processor.
-- [ ] **API-04 Commercial plan administration:** implement validated plan creation/assignment and accountable usage visibility. Separate API quotas from calling capacity and monetary pricing; plan tables/default limits are only a foundation.
-- [ ] **API-05 Operations and documentation:** document endpoints, scopes, error/pagination/idempotency contracts, signing/replay rules and examples; add retention for usage/idempotency/delivery records, monitoring and deployment instructions. Postman collections/CLI checks can support sandbox verification.
-- [ ] **API-06 Scale acceptance:** load-test expected API/import/export/dial-admission workloads; verify queue backpressure, tenant fairness, database indexes and recovery. Establish supported limits from measurements.
-
-Source evidence: `routes/api.php`, `app/Http/Controllers/Api/ClientApiController.php`, `app/Services/Integrations/Access.php`, API middleware, `config/integrations.php` and `2026_10_24_090000_add_external_integrations.php`. No production API readiness is asserted by their presence.
-
-Completion gate: tested account-scoped APIs, manageable credentials/quotas, signed recoverable webhooks, published contracts and measured scale limits. Approval, wallet, DND and PBX gates must remain authoritative.
+Completion gate: target-database and controlled receiver acceptance plus measured scale/recovery evidence. Preserve approval, wallet, DND and PBX admission gates. Stage 09 payment and audible PBX requirements remain separate.
 
 ### 5 Retain optional product extensions as a separate backlog
 
@@ -94,7 +90,8 @@ Priority P3. These remain proposals from the full roadmap, not prerequisites for
 - [ ] Audio waveform and loudness diagnostics. Existing duration/format validation and canonicalization do not deliver the full proposed diagnostic UI.
 - [ ] Execution comparison and richer campaign template experience where existing duplication/templates/report drill-down do not meet the final product requirements. Define the missing behavior before building another subsystem.
 - [ ] Decide whether clients need interactive campaign authoring and a client-scoped IVR editor. The current client campaign service remains one-way; the implemented internal visual IVR editor does not establish client IVR authoring. If included, add client-owned flow selection, review/deployment boundaries and isolation tests through the shared IVR services.
-- [ ] Client business verification, self-service staff invitations/delegated roles and branches if approved. The account model already supports multiple users; this does not imply invitation UX exists.
+- [x] Client business verification, organization profiles, self-service staff invitations/delegated roles and management restrictions are implemented in [Client Management](client-management-review.md).
+- [ ] Optional MFA, branches and finer assigned-account-manager scope remain extensions.
 - [ ] Additional registration countries after country-specific phone normalization and verification support; Ghana is currently supported.
 - [ ] Enterprise integrations and financial documents beyond the initially approved payment/statement scope.
 
@@ -116,6 +113,8 @@ Remaining decisions include provider/merchant contract, production-assigned pric
 
 This is a repository and document gap review, not an exhaustive security audit or live environment inspection. Production migration state, PBX health, carrier delivery, merchant capability and actual enabled flags were not verified. No production commands, calls or payment requests were executed.
 
-Review verification: `php artisan test --compact` passed on 25 October 2026 with 235 tests and 1,588 assertions. `git diff --check` also passed. These checks support the repository baseline; they do not close the production or payment acceptance items above.
+Initial review verification: `php artisan test --compact` passed on 25 October 2026 with 235 tests and 1,588 assertions. After Stage 12 implementation, the full suite passed with 254 tests and 1,731 assertions; both local integration migrations were applied through the ServBay MySQL socket. `git diff --check` also passed. These checks support the repository baseline; they do not close the production or payment acceptance items above.
 
 For each item, record owner, dependencies, implementation PR, automated evidence, target-environment acceptance and deployment notes before closing it. Keep implementation complete, deployed and operationally accepted as separate states. Preserve the four original Word documents as historical references.
+
+Client Management review and implementation completed on 25 October 2026: [module review](client-management-review.md). Local migration and permission registration applied; existing internal role grants preserved. Latest full regression result: 276 tests passed with 1,905 assertions.

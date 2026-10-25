@@ -17,7 +17,7 @@
 @if($billingIssue)<div class="notice">{{ $billingIssue }} <a href="{{ route('client.wallet') }}">Open wallet</a></div>@endif
 <p>Technical launch checks: {{ $technicalReady ? 'Passed current configuration checks. Dispatch checks still apply.' : 'Action required. Contact support to resolve recording, connection or capacity requirements.' }}</p>
 @if(!$executionEnabled)<div class="notice">Client execution is disabled pending controlled acceptance. Contact support.</div>@endif
-@if($mayManage && in_array($campaign->status, ['draft','ready']))<a class="button" href="{{ route('client.campaigns.edit', $campaign) }}">Edit campaign</a>@endif
+@if($mayManage && auth()->user()->clientCan('campaigns.write') && in_array($campaign->status, ['draft','ready']))<a class="button" href="{{ route('client.campaigns.edit', $campaign) }}">Edit campaign</a>@endif
 </section>
 @if($mayManage)
 <section class="panel"><h2>Campaign controls</h2><form method="post" action="{{ route('client.campaigns.control', $campaign) }}">@csrf

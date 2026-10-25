@@ -2,6 +2,7 @@
 
 namespace App\Services\ClientAuth;
 
+use App\Services\GhanaPhone;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -33,10 +34,13 @@ class Delivery
             if (config('client_auth.sms.driver') !== 'txtconnect' || ! config('client_auth.sms.token')) {
                 throw new RuntimeException('SMS is not configured.');
             }
+            $context['failure_stage'] = 'recipient_validation';
+            // Keep E.164 internally; TxtConnect requires the country code without a plus.
+            $recipient = substr(GhanaPhone::normalize($identifier), 1);
             $context['failure_stage'] = 'provider_request';
             $response = Http::withToken(config('client_auth.sms.token'))->acceptJson()->timeout(15)->connectTimeout(5)
                 ->withOptions(['allow_redirects' => false])->post(config('client_auth.sms.url'), [
-                    'to' => ltrim($identifier, '+'), 'from' => config('client_auth.sms.sender'), 'unicode' => '0', 'sms' => $message,
+                    'to' => $recipient, 'from' => config('client_auth.sms.sender'), 'unicode' => '0', 'sms' => $message,
                 ]);
             $context['http_status'] = $response->status();
             $code = $response->json('data.status_code');

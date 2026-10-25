@@ -94,3 +94,11 @@ Apply `2026_10_24_070000_add_registration_contact_details`, refresh caches and r
 ## Step 11 — Advanced campaigns and IVR
 
 Apply `2026_10_24_080000_add_campaign_series`, deploy views/IVR assets, refresh caches and restart normal long-running processes. Keep the minute scheduler running for `campaigns:recurring` and existing activation/expiry maintenance. New IVR telemetry requires a new approved/deployed IVR version; existing installed versions remain unchanged. No dispatch flags, real schedules or PBX configuration are enabled by installation. [Step 11 operations](step-11-advanced-campaigns-ivr.md).
+
+## Stage 12 external integrations
+
+Apply the existing integration foundation migration and `2026_10_25_010000_complete_external_integrations`, deploy views/routes/services, refresh caches and restart gateway and queue processes through the normal deployment procedure. No new seeders or permission grants are needed. The minute scheduler runs `integrations:maintain`; this command schedules actual deliveries when enabled. Use `integrations:status` for read-only counts. API and webhook switches default off; no live `.env` values are changed by installation. See [Stage 12](step-12-integrations.md) for contracts, receiver signing, retention and release acceptance.
+
+## Client Management lifecycle
+
+Apply `2026_10_25_020000_add_client_management`, then run `php artisan db:seed --class=ClientLifecyclePermissionsSeeder --force`. Refresh application caches and restart the normal long-running workers/gateway through the controlled deployment procedure. Existing first account members become client Owners and other members client Administrators; review those assignments. The seeder registers permission names only, without changing any internal role grants. Assign approved staff grants separately. No financial permissions, balances, activation flags, messages or live calls are enabled. See [Client Management review and implementation](client-management-review.md) for permissions, delegation, private documents, invitations, restrictions and acceptance.

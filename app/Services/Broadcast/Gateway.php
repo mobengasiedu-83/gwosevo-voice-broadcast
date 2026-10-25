@@ -8,6 +8,7 @@ use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Services\Billing\Ledger;
+use App\Services\Clients\AccountContext;
 use App\Services\Clients\Accounts;
 use App\Services\Dashboard\QueueTelemetry;
 use Carbon\CarbonImmutable;
@@ -282,7 +283,7 @@ class Gateway
     private function canSend($g, CallAttempt $a, Campaign $campaign, CampaignRecipient $recipient, array $s): bool
     {
         if (! app(Accounts::class)->campaignActive($campaign)) {
-            $this->engine->terminal($a, 'account_suspended');
+            $this->engine->terminal($a, app(AccountContext::class)->active((int) $campaign->client_account_id) ? 'account_restricted' : 'account_suspended');
 
             return false;
         }

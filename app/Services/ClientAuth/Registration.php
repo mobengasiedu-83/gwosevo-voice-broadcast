@@ -5,6 +5,7 @@ namespace App\Services\ClientAuth;
 use App\Models\ClientAccount;
 use App\Models\ClientAuthChallenge;
 use App\Models\User;
+use App\Services\Clients\Management;
 use App\Services\Foundation;
 use App\Services\GhanaPhone;
 use Illuminate\Support\Facades\DB;
@@ -118,6 +119,25 @@ class Registration
         });
     }
 
+    public function administrativeResend(User $actor, string $id): void
+    {
+        app(Management::class)->staff($actor, 'clients.users');
+        DB::transaction(function () use ($actor, $id) {
+            $c = ClientAuthChallenge::whereKey($id)->where('purpose', 'registration')->lockForUpdate()->firstOrFail();
+            abort_if($c->verified_at || $c->consumed_at || $c->expires_at->isPast() || $c->attempts >= 5, 422, 'Only an unexpired pending registration can receive another code.');
+            abort_if($c->sent_at->greaterThan(now()->subMinute()), 429, 'Wait 60 seconds before requesting a code.');
+            $key = 'registration:'.hash('sha256', $c->identifier);
+            abort_if(RateLimiter::tooManyAttempts($key, 3), 429, 'Registration delivery limit reached.');
+            RateLimiter::hit($key, 3600);
+            $code = (string) random_int(100000, 999999);
+            $c->update(['code_hash' => Hash::make($code), 'sent_at' => now(), 'expires_at' => now()->addMinutes(5)]);
+            app(Delivery::class)->send($c->channel, $c->identifier, config('app.name').": Your registration code is {$code}. It expires in five minutes.");
+            DB::table('client_otp_logs')->where('challenge_id', $c->id)->where('status', 'sent')->update(['status' => 'superseded', 'updated_at' => now()]);
+            $this->recordOtp($c);
+            app(Foundation::class)->audit($actor, 'client.registration_code_resent', $actor, ['challenge_id' => $c->id]);
+        });
+    }
+
     private function available(string $email, string $phone): void
     {
         if (User::whereRaw('LOWER(email) = ?', [$email])->orWhere('phone_e164', $phone)->exists()) {
@@ -160,7 +180,7 @@ class Registration
             $user->$verified = now();
             $user->save();
             $account = ClientAccount::create(['name' => $c->details['organization'], 'created_by' => $user->id]);
-            $user->forceFill(['client_account_id' => $account->id])->save();
+            $user->forceFill(['client_account_id' => $account->id, 'client_role' => 'owner'])->save();
             $user->assignRole('Client');
             app(Foundation::class)->audit($user, 'client.registered', $account);
             DB::table('client_otp_logs')->where('challenge_id', $c->id)->update(['client_account_id' => $account->id, 'user_id' => $user->id, 'updated_at' => now()]);

@@ -38,6 +38,7 @@ class CreateClientUser extends Command
             abort_unless($account->status === 'active', 403);
             $user = new User($data);
             $user->client_account_id = $account->id;
+            $user->client_role = $account->users()->exists() ? 'administrator' : 'owner';
             $user->save();
             $user->assignRole(Role::findOrCreate('Client', 'web'));
             DB::table('audit_logs')->insert(['actor_id' => null, 'action' => 'client_user.provisioned', 'entity_type' => User::class, 'entity_id' => $user->id, 'client_account_id' => $account->id, 'details' => json_encode(['source' => 'console']), 'created_at' => now()]);

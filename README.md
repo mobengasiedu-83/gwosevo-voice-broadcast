@@ -357,3 +357,11 @@ Clients receive scoped in-app alerts and can opt into verified email/SMS notices
 ### Advanced campaigns and IVR (Step 11)
 
 Recurring daily/weekly/monthly schedules support manual review or normal gated automatic launch, with overlap prevention, missed-slot handling and history. Campaigns have selectable retry reasons, explicit holiday exclusions and expiry. Voice & IVR adds visual editing, branching diagrams and a call-free simulator; new IVR versions support invalid-input/timeout analysis. [Step 11 setup and behavior](docs/step-11-advanced-campaigns-ivr.md).
+
+### External APIs webhooks and integration plans Stage 12
+
+Clients can manage scoped expiring credentials and signed webhooks at `/client/integrations`. Staff with client-management permission configure account quotas at `/integration-plans`. The API supports scoped reads, imports, one-way drafts and reports; it cannot start calls. Outbox maintenance, bounded delivery retries, private-network protection and retention are included. API access and webhook delivery default off. See [Stage 12 setup and API contract](docs/step-12-integrations.md), [OpenAPI](docs/api/openapi.json) and [Postman examples](docs/api/voicecast.postman_collection.json). Production scale/security/recovery acceptance remains a release gate.
+
+### Client Management lifecycle
+
+Internal Client Management now has an overview, filtered directory, canonical client profiles and links to registrations, users, business verification, wallets/pricing, usage, restrictions, activity and settings. Client Owners/Administrators can manage their organization and invite delegated users. New restrictions are enforced through existing engine/financial admission, and business documents use private storage with a separate review workflow. [Review, implementation scope and deployment](docs/client-management-review.md).

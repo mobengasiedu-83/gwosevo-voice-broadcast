@@ -22,7 +22,7 @@ class ClientAccount extends Model
 
     protected function casts(): array
     {
-        return ['suspended_at' => 'datetime'];
+        return ['suspended_at' => 'datetime', 'profile' => 'array', 'settings' => 'array', 'business_verified_at' => 'datetime', 'launch_blocked' => 'boolean', 'dispatch_blocked' => 'boolean', 'require_both_contacts' => 'boolean', 'require_business_verification' => 'boolean'];
     }
 
     public function users()

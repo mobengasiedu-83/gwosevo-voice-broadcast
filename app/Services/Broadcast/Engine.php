@@ -14,6 +14,7 @@ use App\Services\Billing\Ledger;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\AccountContext;
 use App\Services\Clients\Accounts;
+use App\Services\Clients\Management;
 use App\Services\Clients\Portal;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
@@ -56,8 +57,9 @@ class Engine
     {
         if ($actor->isClient()) {
             app(Portal::class)->authorize($actor);
+            abort_unless($actor->clientCan('campaigns.operate'), 403);
             app(AccountContext::class)->assertOwned($actor, $campaign);
-            abort_unless((int) $campaign->owner_id === (int) $actor->id, 403);
+            abort_unless((int) $campaign->owner_id === (int) $actor->id || in_array($actor->client_role, ['owner', 'administrator', 'operator'], true), 403);
             if (in_array($action, ['start', 'resume'], true)) {
                 abort_unless(config('voice_broadcast.client_execution_enabled'), 403, 'Client execution is disabled pending controlled acceptance.');
             }
@@ -74,6 +76,9 @@ class Engine
             }
             if (in_array($action, ['start', 'resume'], true) && ! app(Accounts::class)->campaignActive($campaign)) {
                 $this->ready->fail('Client account is suspended.');
+            }
+            if (in_array($action, ['start', 'resume'], true)) {
+                app(Management::class)->launch($campaign);
             }
             if ($action === 'start') {
                 if ($campaign->archived_at || ! in_array($campaign->status, ['ready', 'approved'], true)) {
@@ -206,9 +211,13 @@ class Engine
 
     public function complete(int $campaignId): void
     {
-        if (! CampaignRecipient::where('campaign_id', $campaignId)->whereIn('status', ['pending', 'reserved', 'active', 'unknown'])->exists()) {
-            Campaign::whereKey($campaignId)->where('status', 'running')->update(['status' => 'completed']);
-        }
+        DB::transaction(function () use ($campaignId) {
+            $this->mutex();
+            if (! CampaignRecipient::where('campaign_id', $campaignId)->whereIn('status', ['pending', 'reserved', 'active', 'unknown'])->exists()) {
+                $completed = Campaign::whereKey($campaignId)->where('status', 'running')->lockForUpdate()->first();
+                $completed?->update(['status' => 'completed']);
+            }
+        });
     }
 
     public function terminal(CallAttempt $attempt, string $outcome): void

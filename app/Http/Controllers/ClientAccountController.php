@@ -4,16 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\ClientAccount;
 use App\Services\Clients\Accounts;
+use App\Services\Clients\Management;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 
 class ClientAccountController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        Gate::authorize('clients.manage');
+        app(Management::class)->staff($request->user());
+        $filters = app(ClientManagementController::class)->filters($request);
 
-        return view('clients.accounts', ['accounts' => ClientAccount::withCount('users')->latest()->paginate(25)]);
+        return view('clients.accounts', ['filters' => $filters, 'accounts' => app(Management::class)->directory($filters)->latest()->paginate(25)->withQueryString()]);
     }
 
     public function store(Request $request, Accounts $accounts)
