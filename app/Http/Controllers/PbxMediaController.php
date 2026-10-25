@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\AudioFile;
 use App\Models\CallAttempt;
+use App\Models\Campaign;
 use App\Models\CampaignVersion;
 use App\Services\Broadcast\MediaDelivery;
+use App\Services\Clients\Tenancy;
 use Illuminate\Support\Facades\Storage;
 
 class PbxMediaController extends Controller
@@ -15,10 +17,14 @@ class PbxMediaController extends Controller
         abort_unless(app(MediaDelivery::class)->remote(), 404);
         $call = CallAttempt::where('uuid', $attempt)->first();
         abort_unless($call && $call->token && hash_equals($call->token, $token) && $call->sent_at && ! $call->ended_at && $call->sent_at->gt(now()->subMinutes(15)), 404);
-        $snapshot = CampaignVersion::findOrFail($call->campaign_version_id)->snapshot['broadcast'];
+        $version = CampaignVersion::findOrFail($call->campaign_version_id);
+        $campaign = Campaign::findOrFail($version->campaign_id);
+        abort_unless(app(Tenancy::class)->active($campaign->client_id), 404);
+        $snapshot = $version->snapshot['broadcast'];
         $assets = array_merge([['uuid' => $snapshot['audio_uuid'], 'checksum' => $snapshot['checksum']]], $snapshot['ivr']['assets'] ?? []);
         abort_unless(collect($assets)->contains(fn ($asset) => $asset['uuid'] === $audio && hash_equals($asset['checksum'], $checksum)), 404);
         $asset = AudioFile::where('uuid', $audio)->where('status', 'approved')->firstOrFail();
+        abort_unless($asset->client_id === $campaign->client_id, 404);
         $disk = Storage::disk('local');
         abort_unless($disk->exists($asset->storage_key) && hash_equals($checksum, $asset->checksum) && hash_equals($checksum, hash_file('sha256', $disk->path($asset->storage_key))), 404);
 

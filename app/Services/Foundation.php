@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\User;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\Readiness;
+use App\Services\Clients\Tenancy;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -16,7 +17,7 @@ class Foundation
 {
     public function audit(User $actor, string $action, $entity, array $details = []): void
     {
-        AuditLog::create(['actor_id' => $actor->id, 'action' => $action, 'entity_type' => $entity->getMorphClass(), 'entity_id' => $entity->id, 'details' => $details, 'created_at' => now()]);
+        AuditLog::create(['client_id' => app(Tenancy::class)->ownerOf($entity) ?? app(Tenancy::class)->clientId($actor), 'actor_id' => $actor->id, 'action' => $action, 'entity_type' => $entity->getMorphClass(), 'entity_id' => $entity->id, 'details' => $details, 'created_at' => now()]);
     }
 
     public function createContact(User $actor, array $data): Contact
@@ -49,7 +50,7 @@ class Foundation
         DB::transaction(function () use ($actor, $campaign, $data) {
             app(Engine::class)->mutex();
             $campaign = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
-            abort_unless($campaign->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
+            abort_unless(app(Tenancy::class)->sameAccount($actor, $campaign) || $campaign->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
             if ($campaign->archived_at || $campaign->status !== 'draft') {
                 throw ValidationException::withMessages(['campaign' => 'Only drafts can be edited.']);
             }
@@ -66,7 +67,7 @@ class Foundation
             app(Engine::class)->mutex();
             $campaign = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
             if ($decision === 'submit') {
-                abort_unless($campaign->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
+                abort_unless(app(Tenancy::class)->sameAccount($actor, $campaign) || $campaign->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
                 if ($campaign->archived_at || $campaign->status !== 'draft') {
                     throw ValidationException::withMessages(['campaign' => 'Only drafts can be submitted.']);
                 }

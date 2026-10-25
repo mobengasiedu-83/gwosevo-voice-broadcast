@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToClient;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class Campaign extends Model
 {
+    use BelongsToClient;
+
     protected $guarded = ['id'];
 
     protected function casts(): array

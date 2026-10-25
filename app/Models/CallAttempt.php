@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopedThroughClient;
 use Illuminate\Database\Eloquent\Model;
 
 class CallAttempt extends Model
 {
+    use ScopedThroughClient;
+
     protected $guarded = ['id'];
 
     protected $hidden = ['token'];

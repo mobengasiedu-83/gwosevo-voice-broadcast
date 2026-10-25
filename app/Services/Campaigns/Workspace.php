@@ -7,9 +7,12 @@ use App\Models\Campaign;
 use App\Models\CampaignTemplate;
 use App\Models\Contact;
 use App\Models\ContactGroup;
+use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Models\User;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\Tenancy;
+use App\Services\Contacts\Suppression;
 use App\Services\Foundation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -26,24 +29,26 @@ class Workspace
 
     public function query(User $u)
     {
-        return Campaign::query()->when(! $this->global($u), fn ($q) => $q->where('owner_id', $u->id));
+        return Campaign::query()->when(app(Tenancy::class)->clientId($u), fn ($q, $id) => $q->where('campaigns.client_id', $id))->when(app(Tenancy::class)->clientId($u) === null && (! $this->global($u)), fn ($q) => $q->where('owner_id', $u->id));
     }
 
     public function templates(User $u)
     {
-        return CampaignTemplate::query()->when(! $this->global($u), fn ($q) => $q->where('owner_id', $u->id));
+        return CampaignTemplate::query()->when(app(Tenancy::class)->clientId($u), fn ($q, $id) => $q->where('campaign_templates.client_id', $id))->when(app(Tenancy::class)->clientId($u) === null && (! $this->global($u)), fn ($q) => $q->where('owner_id', $u->id));
     }
 
     public function access(User $u, Campaign $c): void
     {
+        app(Tenancy::class)->assertAccess($u, $c);
         Gate::forUser($u)->authorize('campaigns.view');
         abort_unless($this->query($u)->whereKey($c->id)->exists(), 403);
     }
 
     public function own(User $u, Campaign $c): void
     {
+        app(Tenancy::class)->assertAccess($u, $c);
         Gate::forUser($u)->authorize('campaigns.manage');
-        abort_unless($c->owner_id === $u->id || $u->isSuperAdministrator(), 403);
+        abort_unless(app(Tenancy::class)->sameAccount($u, $c) || $c->owner_id === $u->id || $u->isSuperAdministrator(), 403);
     }
 
     public function save(User $u, ?Campaign $c, array $data): Campaign
@@ -74,6 +79,20 @@ class Workspace
                 $ids = array_values(array_unique(array_merge($ids, $group->contacts()->pluck('contacts.id')->map(fn ($id) => (string) $id)->all())));
             }
             Validator::make(['ids' => $ids], ['ids' => 'array|max:10000', 'ids.*' => 'integer|distinct|exists:contacts,id'])->validate();
+            $tenant = app(Tenancy::class);
+            $tenant->assertAssets($c, $ids, Contact::class);
+            if (! empty($config['audio_id'])) {
+                $tenant->assertAssets($c, [$config['audio_id']], AudioFile::class);
+            }
+            if (! empty($config['ivr_flow_id'])) {
+                $tenant->assertAssets($c, [$config['ivr_flow_id']], IvrFlow::class);
+            }
+            if (! empty($config['source_group_id'])) {
+                $tenant->assertAssets($c, [$config['source_group_id']], ContactGroup::class);
+            }
+            if ($tenant->clientId($u) !== null) {
+                unset($config['caller_id']);
+            }
             $config['contact_ids'] = $ids;
             $before = $c->only(['name', 'purpose', 'type', 'configuration']);
             $audio = empty($config['audio_id']) ? null : AudioFile::find($config['audio_id']);
@@ -166,7 +185,7 @@ class Workspace
         $ids = $c->configuration['contact_ids'] ?? [];
         $current = Contact::whereIn('id', array_column($s['targets'] ?? [], 'id') ?: $ids)->pluck('phone_e164', 'id');
         $targets = $s['targets'] ?? array_map(fn ($id) => ['id' => $id, 'phone_e164' => $current[$id] ?? null], $ids);
-        $suppressed = DB::table('suppression_entries')->whereIn('phone_e164', $current->values())->where('effective_at', '<=', now())->pluck('phone_e164')->flip();
+        $suppressed = app(Suppression::class)->visible()->whereIn('phone_e164', $current->values())->where('effective_at', '<=', now())->pluck('phone_e164')->flip();
         $counts = ['eligible' => 0, 'suppressed' => 0, 'contact_changed' => 0];
         foreach ($targets as $target) {
             $id = $target['id'];

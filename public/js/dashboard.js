@@ -1,5 +1,6 @@
 (() => {
  const menu=document.getElementById('menu-toggle');menu?.addEventListener('click',()=>{const open=menu.getAttribute('aria-expanded')!=='true';menu.setAttribute('aria-expanded',String(open));document.body.classList.toggle('nav-open',open);});
+ document.addEventListener('keydown',event=>{if(event.key==='Escape'){menu?.setAttribute('aria-expanded','false');document.body.classList.remove('nav-open');}});
   document.querySelectorAll('#sidebar .nav-group').forEach(group=>group.addEventListener('toggle',()=>{if(group.open)document.querySelectorAll('#sidebar .nav-group[open]').forEach(other=>{if(other!==group)other.open=false;});}));
  const panel=document.getElementById('dashboard-panel'),refresh=document.getElementById('refresh-now'),status=document.getElementById('refresh-status');let busy=false,last=Date.now(),failed=false;
  function elapsed(){document.querySelectorAll('[data-elapsed]').forEach(el=>{const age=Math.max(0,Math.floor((Date.now()-Date.parse(el.dataset.elapsed))/1000));if(Number.isFinite(age))el.textContent=age>=3600?`${Math.floor(age/3600)}h ${Math.floor(age%3600/60)}m`:`${Math.floor(age/60)}m ${age%60}s`;});if(status&&!busy){const age=Math.floor((Date.now()-last)/1000);status.textContent=failed?'Updates unavailable · data retained':`Updated ${age}s ago`;status.classList.toggle('stale',failed||age>30);}}

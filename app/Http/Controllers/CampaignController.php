@@ -11,6 +11,7 @@ use App\Models\IvrFlow;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\Readiness;
 use App\Services\Campaigns\Workspace;
+use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -68,7 +69,7 @@ class CampaignController extends Controller
             abort_if($campaign->archived_at || ! in_array($campaign->status, ['draft', 'ready'], true), 422, 'Only draft or ready campaigns can be edited. Duplicate a completed campaign for a new run.');
         }
 
-        return view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get()]);
+        return view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $r->user()->clientMembership()->exists() ? null : $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get()]);
     }
 
     public function save(Request $r, Workspace $w, ?Campaign $campaign = null)
@@ -106,7 +107,7 @@ class CampaignController extends Controller
             }
         }
 
-        return response()->view('campaigns.show', ['campaign' => $campaign, 'schedulePreview' => $schedulePreview, 'selectedAudio' => AudioFile::find($campaign->configuration['audio_id'] ?? null), 'readiness' => $readiness, 'snapshot' => $snapshot, 'eligibility' => $eligibility, 'versions' => $campaign->versions()->orderByDesc('version')->get(), 'reviews' => DB::table('campaign_reviews')->where('campaign_id', $campaign->id)->orderByDesc('id')->get(), 'run' => CampaignRun::where('campaign_id', $campaign->id)->first(), 'templates' => $w->templates($r->user())->when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->latest('id')->limit(100)->get()])->header('Cache-Control', 'private, no-store');
+        return response()->view('campaigns.show', ['campaign' => $campaign, 'schedulePreview' => $schedulePreview, 'selectedAudio' => AudioFile::find($campaign->configuration['audio_id'] ?? null), 'readiness' => $readiness, 'snapshot' => $snapshot, 'eligibility' => $eligibility, 'versions' => $campaign->versions()->orderByDesc('version')->get(), 'reviews' => DB::table('campaign_reviews')->where('campaign_id', $campaign->id)->orderByDesc('id')->get(), 'run' => CampaignRun::where('campaign_id', $campaign->id)->first(), 'templates' => $w->templates($r->user())->when(app(Tenancy::class)->current() === null && (! $r->user()->isSuperAdministrator()), fn ($q) => $q->where('owner_id', $r->user()->id))->latest('id')->limit(100)->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function review(Request $r, Campaign $campaign, Workspace $w, Foundation $f)

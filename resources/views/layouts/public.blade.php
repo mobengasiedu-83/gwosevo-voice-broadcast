@@ -7,6 +7,6 @@
 <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
 <link rel="stylesheet" href="{{ asset('css/public.css') }}"><link rel="stylesheet" href="{{ asset('css/theme.css') }}"><link rel="stylesheet" href="{{ asset('css/public-theme.css') }}">
 <script src="{{ asset('js/public.js') }}" defer></script>
-<link rel="stylesheet" href="{{ asset('css/themes.css') }}"></head>
+<link rel="stylesheet" href="{{ asset('css/themes.css') }}"><link rel="stylesheet" href="{{ asset('css/identity.css') }}"></head>
 <body class="@yield('body-class')"><a class="skip-link" href="#main">Skip to content</a>@yield('content')<button type="button" class="theme-toggle public-theme-toggle" data-theme-toggle aria-label="Switch color theme" aria-pressed="false" hidden>Theme</button></body>
 </html>

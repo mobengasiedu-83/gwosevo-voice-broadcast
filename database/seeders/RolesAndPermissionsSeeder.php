@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -13,7 +14,8 @@ class RolesAndPermissionsSeeder extends Seeder
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $matrix = [
-            'Super Administrator' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
+            'Client Member' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage', 'reports.view'],
+            'Super Administrator' => ['clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
             'Telephony Administrator' => ['telephony.view', 'telephony.manage'],
             'Campaign Manager' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage'],
             'Approver' => ['campaigns.view', 'campaigns.approve', 'audio.approve'],
@@ -24,7 +26,7 @@ class RolesAndPermissionsSeeder extends Seeder
         foreach ($matrix as $role => &$permissions) {
             $permissions[] = 'dashboard.view';
             $permissions[] = 'dashboard.live';
-            if ($role !== 'Campaign Manager') {
+            if (! in_array($role, ['Campaign Manager', 'Client Member'], true)) {
                 $permissions[] = 'dashboard.global';
             }
             if (in_array($role, ['Super Administrator', 'Telephony Administrator', 'Operator'], true)) {
@@ -39,6 +41,7 @@ class RolesAndPermissionsSeeder extends Seeder
         foreach ($matrix as $name => $permissions) {
             Role::findOrCreate($name, 'web')->syncPermissions($permissions);
         }
+        User::whereHas('clientMembership')->each(fn ($user) => $user->syncRoles(['Client Member']));
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 }

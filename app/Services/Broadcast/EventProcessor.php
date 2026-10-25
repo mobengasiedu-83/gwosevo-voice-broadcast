@@ -8,6 +8,7 @@ use App\Models\CallEvent;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
+use App\Services\Contacts\Suppression;
 use Illuminate\Support\Facades\DB;
 
 class EventProcessor
@@ -125,8 +126,8 @@ class EventProcessor
                     $a->outcome = 'opt_out';
                     $recipient = CampaignRecipient::findOrFail($a->campaign_recipient_id);
                     $owner = Campaign::findOrFail($recipient->campaign_id)->owner_id;
-                    DB::table('suppression_entries')->insertOrIgnore(['phone_e164' => $recipient->phone_e164, 'reason' => 'IVR opt-out', 'created_by' => $owner, 'effective_at' => now()]);
-                    AuditLog::firstOrCreate(['action' => 'call.opt_out', 'entity_type' => CallAttempt::class, 'entity_id' => $a->id], ['actor_id' => null, 'details' => ['source' => 'PBX UserEvent'], 'created_at' => now()]);
+                    app(Suppression::class)->add($recipient->phone_e164, 'IVR opt-out', $owner, now());
+                    AuditLog::firstOrCreate(['action' => 'call.opt_out', 'entity_type' => CallAttempt::class, 'entity_id' => $a->id], ['client_id' => Campaign::findOrFail($recipient->campaign_id)->client_id, 'actor_id' => null, 'details' => ['source' => 'PBX UserEvent'], 'created_at' => now()]);
                 }
             }
             $a->save();

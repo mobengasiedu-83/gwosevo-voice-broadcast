@@ -11,6 +11,7 @@ use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Models\User;
 use App\Services\Campaigns\Workspace;
+use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -32,13 +33,16 @@ class Engine
         DB::transaction(function () use ($actor, $campaign, $config) {
             $this->mutex();
             $campaign = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
-            abort_unless($campaign->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
+            abort_unless(app(Tenancy::class)->sameAccount($actor, $campaign) || $campaign->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
             if ($campaign->archived_at || $campaign->status !== 'draft') {
                 $this->ready->fail('Only a draft can be configured.');
             }
             $trunk = app(Workspace::class)->configuredTrunk();
             if (! $trunk) {
                 $this->ready->fail('Set VITALPBX_TRUNK_NAME and import its connection profile first.');
+            }
+            if (app(Tenancy::class)->clientId($actor) !== null) {
+                unset($config['caller_id']);
             }
             $config['trunk_id'] = $trunk->id;
             $campaign->configuration = $config;
@@ -50,10 +54,11 @@ class Engine
 
     public function control(User $actor, Campaign $campaign, string $action, bool $allowOwnedCampaign = false): void
     {
+        app(Tenancy::class)->assertAccess($actor, $campaign);
         if ($action === 'emergency') {
-            abort_unless($actor->can('broadcast.emergency') || ($actor->can('campaigns.manage') && $campaign->owner_id === $actor->id), 403);
+            abort_unless($actor->can('broadcast.emergency') || ($actor->can('campaigns.manage') && (app(Tenancy::class)->sameAccount($actor, $campaign) || $campaign->owner_id === $actor->id)), 403);
         } else {
-            abort_unless(Gate::forUser($actor)->allows('broadcast.operate') || ($actor->can('campaigns.manage') && $campaign->owner_id === $actor->id), 403);
+            abort_unless(Gate::forUser($actor)->allows('broadcast.operate') || ($actor->can('campaigns.manage') && (app(Tenancy::class)->sameAccount($actor, $campaign) || $campaign->owner_id === $actor->id)), 403);
         }
         DB::transaction(function () use ($actor, $campaign, $action) {
             $this->mutex();
@@ -139,6 +144,9 @@ class Engine
         Campaign::where('status', 'scheduled')->where('scheduled_at', '<=', now())->where('stop_requested', false)->update(['status' => 'running']);
         $campaigns = Campaign::where('status', 'running')->where('stop_requested', false)->orderBy('dispatch_score')->orderBy('last_dispatched_at')->orderBy('id')->get();
         foreach ($campaigns as $campaign) {
+            if (! app(Tenancy::class)->active($campaign->client_id)) {
+                continue;
+            }
             $s = CampaignVersion::findOrFail($campaign->active_version_id)->snapshot['broadcast'];
             if (! $this->ready->inWindow($s)) {
                 continue;

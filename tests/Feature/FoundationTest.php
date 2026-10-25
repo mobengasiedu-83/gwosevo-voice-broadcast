@@ -143,7 +143,7 @@ class FoundationTest extends TestCase
     public function test_seed_is_repeatable_and_has_no_default_accounts(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
-        $this->assertDatabaseCount('roles', 7);
+        $this->assertDatabaseCount('roles', 8);
         $this->assertDatabaseCount('users', 0);
     }
 }

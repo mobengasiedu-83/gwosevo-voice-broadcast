@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
+use App\Services\Clients\Tenancy;
 use App\Services\Dashboard\QueueTelemetry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -279,6 +280,9 @@ class Gateway
 
     private function canSend($g, CallAttempt $a, Campaign $campaign, CampaignRecipient $recipient, array $s): bool
     {
+        if (! app(Tenancy::class)->active($campaign->client_id)) {
+            return false;
+        }
         $reason = $this->ready->exclusion($recipient->contact_id, $recipient->phone_e164, $s['purpose']);
         if (! config('voice_broadcast.enabled') || $g->emergency_stop || ! in_array($campaign->status, ['running', 'paused'], true) || $campaign->stop_requested || $a->stop_requested_at || $reason) {
             $this->engine->terminal($a, $reason ?? 'cancelled_before_send');

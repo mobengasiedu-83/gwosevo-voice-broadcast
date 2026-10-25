@@ -8,8 +8,9 @@ use App\Models\Contact;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Services\Campaigns\Workspace;
+use App\Services\Clients\Tenancy;
+use App\Services\Contacts\Suppression;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -48,6 +49,9 @@ class Readiness
         if (! in_array($campaign->type, ['one_way', 'interactive'], true)) {
             $this->fail('Unsupported campaign type.');
         }
+        if (! app(Tenancy::class)->active($campaign->client_id)) {
+            $this->fail('Client account is not active.');
+        }
         $c = $campaign->configuration ?? [];
         Validator::make($c, [
             'audio_id' => 'required|integer|exists:audio_files,id',
@@ -55,6 +59,12 @@ class Readiness
             'window_start' => 'required|date_format:H:i', 'window_end' => 'required|date_format:H:i|after:window_start',
             'contact_ids' => 'required|array|min:1|max:10000', 'contact_ids.*' => 'required|integer|distinct|exists:contacts,id',
         ])->validate();
+        $tenant = app(Tenancy::class);
+        $tenant->assertAssets($campaign, $c['contact_ids'], Contact::class);
+        $tenant->assertAssets($campaign, [$c['audio_id']], AudioFile::class);
+        if (! empty($c['ivr_flow_id'])) {
+            $tenant->assertAssets($campaign, [$c['ivr_flow_id']], IvrFlow::class);
+        }
         $audio = AudioFile::findOrFail($c['audio_id']);
         $trunk = app(Workspace::class)->configuredTrunk();
         if (! $trunk) {
@@ -87,7 +97,7 @@ class Readiness
         }
 
         return [
-            'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
+            'client_id' => $campaign->client_id, 'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
             'trunk_name' => $trunk->name, 'caller_id' => $callerId, 'number_format' => $trunk->number_format,
             'concurrency' => (int) $c['concurrency'], 'cps' => (float) $c['cps'], 'timezone' => $policy['timezone'], 'scheduled_at' => $policy['scheduled_at'], 'priority' => $policy['priority'], 'ivr' => $ivr,
             'window_start' => $c['window_start'], 'window_end' => $c['window_end'], 'purpose' => $campaign->purpose,
@@ -108,7 +118,7 @@ class Readiness
         if (! $contact || $contact->phone_e164 !== $phone) {
             return 'contact_changed';
         }
-        if (DB::table('suppression_entries')->where('phone_e164', $phone)->where('effective_at', '<=', now())->exists()) {
+        if (app(Suppression::class)->forAccount($contact->client_id)->where('phone_e164', $phone)->where('effective_at', '<=', now())->exists()) {
             return 'suppressed';
         }
 
@@ -117,6 +127,9 @@ class Readiness
 
     public function liveAssets(array $s): void
     {
+        if (! app(Tenancy::class)->active($s['client_id'] ?? null)) {
+            $this->fail('Client account is not active.');
+        }
         if (($s['media_mode'] ?? 'pbx') !== config('voice_broadcast.media_mode', 'pbx')) {
             $this->fail('Audio delivery mode changed. Create a new campaign execution.');
         }

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToClient;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 
 class AuditLog extends Model
 {
+    use BelongsToClient;
+
     public $timestamps = false;
 
     protected $guarded = ['id'];

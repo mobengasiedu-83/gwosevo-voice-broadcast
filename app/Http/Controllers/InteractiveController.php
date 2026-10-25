@@ -21,7 +21,7 @@ class InteractiveController extends Controller
     {
         abort_unless($request->user()->hasAnyPermission(['campaigns.manage', 'campaigns.approve', 'telephony.manage']), 403);
 
-        return view('broadcast.interactive', ['telephonyPage' => false, 'flows' => IvrFlow::whereNotNull('uuid')->latest()->paginate(20), 'audio' => AudioFile::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'routes' => TransferRoute::all(), 'trunks' => TrunkProfile::whereNotNull('name')->get()]);
+        return view('broadcast.interactive', ['telephonyPage' => false, 'flows' => IvrFlow::whereNotNull('uuid')->latest()->paginate(20), 'audio' => AudioFile::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'routes' => TransferRoute::all(), 'trunks' => $request->user()->clientMembership()->exists() ? collect() : TrunkProfile::whereNotNull('name')->get()]);
     }
 
     public function telephony()

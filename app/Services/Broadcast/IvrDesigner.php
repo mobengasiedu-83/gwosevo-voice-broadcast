@@ -6,6 +6,7 @@ use App\Models\AudioFile;
 use App\Models\IvrFlow;
 use App\Models\TransferRoute;
 use App\Models\User;
+use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -103,12 +104,14 @@ class IvrDesigner
     public function save(User $actor, string $name, array $graph, ?IvrFlow $source = null): IvrFlow
     {
         Gate::forUser($actor)->authorize('campaigns.manage');
-        $this->validate($graph);
+        $assets = $this->validate($graph);
+        $tenant = app(Tenancy::class);
+        $tenant->assertAssets(new IvrFlow(['client_id' => $tenant->clientId($actor)]), array_column($assets['assets'], 'id'), AudioFile::class);
 
         return DB::transaction(function () use ($actor, $name, $graph, $source) {
             app(Engine::class)->mutex();
             if ($source) {
-                abort_unless($source->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
+                abort_unless(app(Tenancy::class)->sameAccount($actor, $source) || $source->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
             }
             $family = $source?->family_uuid ?? (string) Str::uuid();
             $flow = IvrFlow::create(['family_uuid' => $family, 'uuid' => (string) Str::uuid(), 'name' => $name, 'version' => (IvrFlow::where('family_uuid', $family)->max('version') ?? 0) + 1, 'owner_id' => $actor->id, 'graph' => $graph, 'checksum' => hash('sha256', json_encode($graph, JSON_THROW_ON_ERROR)), 'status' => 'draft']);
@@ -127,7 +130,9 @@ class IvrDesigner
             abort_if($flow->owner_id === $actor->id && ! $actor->isSuperAdministrator(), 403);
             if ($flow->status !== 'draft') {
                 app(Readiness::class)->fail('Only draft flows can be approved.');
-            }$this->validate($flow->graph);
+            }
+            $assets = $this->validate($flow->graph);
+            app(Tenancy::class)->assertAssets($flow, array_column($assets['assets'], 'id'), AudioFile::class);
             $flow->update(['status' => 'approved', 'approved_by' => $actor->id, 'approved_at' => now()]);
             app(Foundation::class)->audit($actor, 'ivr.approved', $flow);
         });
@@ -138,6 +143,9 @@ class IvrDesigner
         if ($flow->status !== 'approved' || ! $flow->deployed_at) {
             app(Readiness::class)->fail('An approved deployed IVR version is required.');
         }
+
+        $assets = $this->validate($flow->graph);
+        app(Tenancy::class)->assertAssets($flow, array_column($assets['assets'], 'id'), AudioFile::class);
 
         return ['id' => $flow->id, 'uuid' => $flow->uuid, 'checksum' => $flow->checksum, 'graph' => $flow->graph, 'context' => 'gwosevo-ivr-'.str_replace('-', '', $flow->uuid)] + $this->validate($flow->graph);
     }

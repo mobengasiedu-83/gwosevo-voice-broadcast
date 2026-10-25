@@ -6,10 +6,12 @@ use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FoundationController;
+use App\Http\Controllers\IdentityController;
 use App\Http\Controllers\InteractiveController;
 use App\Http\Controllers\InternalTestMediaController;
 use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\SessionController;
+use App\Http\Middleware\VerifyTurnstile;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -52,16 +54,28 @@ Route::get(
 |--------------------------------------------------------------------------
 */
 
-Route::get('/', fn() => view('welcome'));
+Route::get('/', fn () => view('welcome'));
+Route::get('/registration-notice', fn () => view('auth.terms'))->name('terms');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])
         ->name('login');
 
     Route::post('/login', [SessionController::class, 'store'])
-        ->middleware('throttle:5,1')
+        ->middleware(['throttle:5,1', VerifyTurnstile::class.':login'])
         ->name('login.store');
+
+    Route::get('/register', [IdentityController::class, 'register'])->name('register');
+    Route::post('/register', [IdentityController::class, 'startRegistration'])->middleware(['throttle:5,1', VerifyTurnstile::class.':register'])->name('register.store');
+    Route::get('/forgot-password', [IdentityController::class, 'recovery'])->name('password.request');
+    Route::post('/forgot-password', [IdentityController::class, 'startRecovery'])->middleware(['throttle:5,1', VerifyTurnstile::class.':recovery'])->name('password.email');
 });
+
+Route::get('/verify-contact', [IdentityController::class, 'verification'])->name('identity.verify');
+Route::post('/verify-contact', [IdentityController::class, 'verify'])->middleware(['throttle:10,1', VerifyTurnstile::class.':verify'])->name('identity.verify.store');
+Route::post('/verify-contact/resend', [IdentityController::class, 'resend'])->middleware(['throttle:3,1', VerifyTurnstile::class.':resend'])->name('identity.resend');
+Route::get('/set-password', [IdentityController::class, 'password'])->name('identity.password');
+Route::post('/set-password', [IdentityController::class, 'setPassword'])->middleware(['throttle:5,1', VerifyTurnstile::class.':password'])->name('identity.password.store');
 
 /*
 |--------------------------------------------------------------------------
@@ -70,6 +84,8 @@ Route::middleware('guest')->group(function () {
 */
 
 Route::middleware('auth')->group(function () {
+    Route::get('/account/security', [IdentityController::class, 'security'])->name('account.security');
+    Route::post('/account/security/contact', [IdentityController::class, 'changeContact'])->middleware(['throttle:5,1', VerifyTurnstile::class.':identity'])->name('account.contact');
     Route::post('/logout', [SessionController::class, 'destroy'])
         ->name('logout');
 

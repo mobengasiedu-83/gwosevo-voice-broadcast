@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\ContactConsent;
 use App\Models\ContactGroup;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\Tenancy;
 use App\Services\Contacts\Suppression;
 use App\Services\Foundation;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -24,7 +25,7 @@ class FoundationController extends Controller
 
         return view('foundation.index', [
             'contacts' => $user->can('contacts.view') ? Contact::with(['consents', 'groups'])->latest()->paginate(20, ['*'], 'contacts_page') : null,
-            'campaigns' => $user->can('campaigns.view') ? Campaign::when(! $user->can('campaigns.approve') && ! $user->can('audit.view') && ! $user->can('reports.view') && ! $user->can('operations.view'), fn ($q) => $q->where('owner_id', $user->id))->latest()->paginate(20, ['*'], 'campaigns_page') : null,
+            'campaigns' => $user->can('campaigns.view') ? Campaign::when(app(Tenancy::class)->current() === null && ! $user->can('campaigns.approve') && ! $user->can('audit.view') && ! $user->can('reports.view') && ! $user->can('operations.view'), fn ($q) => $q->where('owner_id', $user->id))->latest()->paginate(20, ['*'], 'campaigns_page') : null,
             'audits' => $user->can('audit.view') ? AuditLog::latest('id')->paginate(20, ['*'], 'audit_page') : null,
         ]);
     }
@@ -79,7 +80,7 @@ class FoundationController extends Controller
             $service->audit($request->user(), 'contact.suppressed', $contact);
         });
 
-        return back()->with('status', 'Global suppression recorded.');
+        return back()->with('status', 'Suppression recorded.');
     }
 
     public function campaign(Request $request, Foundation $service)

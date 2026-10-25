@@ -27,7 +27,7 @@ class BroadcastController extends Controller
         $media = $user->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']);
 
         return view('broadcast.index', ['campaigns' => $campaigns, 'audio' => $media ? AudioFile::whereNotNull('uuid')->latest()->limit(100)->get() : collect(),
-            'trunks' => $media ? TrunkProfile::whereNotNull('name')->get() : collect(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'gateway' => $user->hasAnyPermission(['telephony.view', 'operations.view']) ? DB::table('broadcast_gateway')->where('id', 1)->first() : null]);
+            'trunks' => $media && ! $user->clientMembership()->exists() ? TrunkProfile::whereNotNull('name')->get() : collect(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'gateway' => $user->hasAnyPermission(['telephony.view', 'operations.view']) ? DB::table('broadcast_gateway')->where('id', 1)->first() : null]);
     }
 
     public function audioLibrary(Request $request)

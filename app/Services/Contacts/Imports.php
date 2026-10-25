@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\ContactImport;
 use App\Models\User;
+use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use App\Services\GhanaPhone;
 use Illuminate\Support\Facades\DB;
@@ -19,17 +20,17 @@ class Imports
     public function access(User $u, ContactImport $batch): void
     {
         Gate::forUser($u)->authorize('contacts.manage');
-        abort_unless($batch->owner_id === $u->id || $u->isSuperAdministrator(), 403);
+        abort_unless(app(Tenancy::class)->sameAccount($u, $batch) || $batch->owner_id === $u->id || $u->isSuperAdministrator(), 403);
     }
 
     public function stage(User $u, ContactGroup $group, string $filename, array $headers, array $rows): ContactImport
     {
         Gate::forUser($u)->authorize('contacts.manage');
-        abort_unless($group->owner_id === $u->id || $u->isSuperAdministrator(), 403);
+        abort_unless(app(Tenancy::class)->sameAccount($u, $group) || $group->owner_id === $u->id || $u->isSuperAdministrator(), 403);
         abort_unless($group->active, 422, 'Activate the group before importing.');
 
         return DB::transaction(function () use ($u, $group, $filename, $headers, $rows) {
-            $b = ContactImport::create(['owner_id' => $u->id, 'contact_group_id' => $group->id, 'filename' => mb_substr(basename($filename), 0, 255), 'headers' => $headers, 'total' => count($rows)]);
+            $b = ContactImport::create(['client_id' => $group->client_id, 'owner_id' => $u->id, 'contact_group_id' => $group->id, 'filename' => mb_substr(basename($filename), 0, 255), 'headers' => $headers, 'total' => count($rows)]);
             foreach (array_chunk($rows, 250, true) as $chunk) {
                 $insert = [];
                 foreach ($chunk as $n => $row) {
@@ -56,7 +57,7 @@ class Imports
             $seen = [];
             $invalid = 0;
             $duplicates = 0;
-            $existing = Contact::whereNotNull('phone_e164')->pluck('phone_e164')->flip();
+            $existing = Contact::where('client_id', $b->client_id)->whereNotNull('phone_e164')->pluck('phone_e164')->flip();
             foreach (DB::table('contact_import_rows')->where('contact_import_id', $b->id)->orderBy('id')->cursor() as $row) {
                 $raw = json_decode($row->raw, true);
                 $phone = null;
@@ -97,14 +98,25 @@ class Imports
 
     public function process(int $id): void
     {
+        $batch = ContactImport::withoutGlobalScopes()->findOrFail($id);
+        app(Tenancy::class)->run($batch->client_id, fn () => $this->processBatch($id));
+    }
+
+    private function processBatch(int $id): void
+    {
         DB::transaction(function () use ($id) {
             $b = ContactImport::whereKey($id)->lockForUpdate()->firstOrFail();
             if (! in_array($b->status, ['queued', 'processing'])) {
                 return;
             }
             $u = User::findOrFail($b->owner_id);
+            if (! app(Tenancy::class)->usable($u) || (app(Tenancy::class)->clientId($u) !== null && app(Tenancy::class)->clientId($u) !== $b->client_id)) {
+                $b->update(['status' => 'blocked']);
+
+                return;
+            }
             $group = ContactGroup::whereKey($b->contact_group_id)->lockForUpdate()->firstOrFail();
-            if (! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator()) || ! $group->active) {
+            if (! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator() && $group->client_id === null) || $group->client_id !== $b->client_id || ! $group->active) {
                 $b->update(['status' => 'blocked']);
 
                 return;
@@ -113,7 +125,7 @@ class Imports
             $rows = DB::table('contact_import_rows')->where('contact_import_id', $id)->whereNull('committed_at')->whereIn('state', ['valid', 'existing'])->orderBy('id')->limit(250)->get();
             $new = 0;
             foreach ($rows as $r) {
-                $c = Contact::firstOrCreate(['phone_e164' => $r->phone_e164], ['uuid' => (string) Str::uuid(), 'name' => $r->name, 'source' => $r->source, 'source_phone' => $r->phone_e164, 'created_by' => $u->id]);
+                $c = Contact::firstOrCreate(['client_id' => $b->client_id, 'phone_e164' => $r->phone_e164], ['uuid' => (string) Str::uuid(), 'name' => $r->name, 'source' => $r->source, 'source_phone' => $r->phone_e164, 'created_by' => $u->id]);
                 $group->contacts()->syncWithoutDetaching([$c->id]);
                 $created = $c->wasRecentlyCreated;
                 DB::table('contact_import_rows')->where('id', $r->id)->update(['state' => $created ? 'imported' : 'linked', 'committed_at' => now()]);

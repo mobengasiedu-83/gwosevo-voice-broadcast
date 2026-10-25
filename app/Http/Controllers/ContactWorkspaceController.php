@@ -8,6 +8,7 @@ use App\Models\ContactConsent;
 use App\Models\ContactGroup;
 use App\Models\ContactImport;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\Tenancy;
 use App\Services\Contacts\ImportReader;
 use App\Services\Contacts\Imports;
 use App\Services\Contacts\Suppression;
@@ -32,13 +33,13 @@ class ContactWorkspaceController extends Controller
 
     private function groupsQuery(Request $r)
     {
-        return ContactGroup::query()->when(! $r->user()->can('audit.view'), fn ($q) => $q->where('owner_id', $r->user()->id));
+        return ContactGroup::query()->when(app(Tenancy::class)->current() === null && (! $r->user()->can('audit.view')), fn ($q) => $q->where('owner_id', $r->user()->id));
     }
 
     private function groupAccess(Request $r, ContactGroup $group, bool $write = false): void
     {
         Gate::authorize($write ? 'contacts.manage' : 'contacts.view');
-        abort_unless($group->owner_id === $r->user()->id || $r->user()->isSuperAdministrator() || (! $write && $r->user()->can('audit.view')), 403);
+        abort_unless(app(Tenancy::class)->sameAccount($r->user(), $group) || $group->owner_id === $r->user()->id || $r->user()->isSuperAdministrator() || (! $write && $r->user()->can('audit.view')), 403);
     }
 
     public function groups(Request $r)
@@ -60,9 +61,9 @@ class ContactWorkspaceController extends Controller
             $query->orderBy('id', ($f['sort'] ?? '') === 'oldest' ? 'asc' : 'desc');
         }
         $groups = $query->withCount('contacts')->paginate(15)->withQueryString();
-        $stats = ['groups' => $total, 'contacts' => Contact::whereNotNull('phone_e164')->count(), 'imports' => ContactImport::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('created_at', '>=', now()->startOfMonth())->count(), 'suppressed' => DB::table('suppression_entries')->where('effective_at', '<=', now())->count()];
+        $stats = ['groups' => $total, 'contacts' => Contact::whereNotNull('phone_e164')->count(), 'imports' => ContactImport::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('created_at', '>=', now()->startOfMonth())->count(), 'suppressed' => app(Suppression::class)->visible()->where('effective_at', '<=', now())->count()];
 
-        return response()->view('contacts.groups', ['groups' => $groups, 'stats' => $stats, 'f' => $f, 'categories' => $this->groupsQuery($r)->select('category')->distinct()->orderBy('category')->pluck('category'), 'uploadGroups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
+        return response()->view('contacts.groups', ['groups' => $groups, 'stats' => $stats, 'f' => $f, 'categories' => $this->groupsQuery($r)->select('category')->distinct()->orderBy('category')->pluck('category'), 'uploadGroups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function saveGroup(Request $r, Foundation $audit, ?ContactGroup $group = null)
@@ -94,6 +95,7 @@ class ContactWorkspaceController extends Controller
     {
         $this->groupAccess($r, $group, true);
         $d = $r->validate(['contact_id' => 'required|integer|exists:contacts,id', 'action' => 'required|in:add,remove']);
+        Contact::findOrFail($d['contact_id']);
         DB::transaction(function () use ($r, $group, $d, $audit) {
             $g = ContactGroup::whereKey($group->id)->lockForUpdate()->firstOrFail();
             if ($d['action'] === 'add') {
@@ -124,10 +126,10 @@ class ContactWorkspaceController extends Controller
             $query->whereHas('consents', fn ($b) => $f['consent'] === 'granted' ? $b->whereNull('revoked_at')->where('granted_at', '<=', now()) : $b->whereNotNull('revoked_at'));
         }
         if (! empty($f['suppressed'])) {
-            $query->whereIn('phone_e164', DB::table('suppression_entries')->where('effective_at', '<=', now())->select('phone_e164'));
+            $query->whereIn('phone_e164', app(Suppression::class)->visible()->where('effective_at', '<=', now())->select('phone_e164'));
         }
         $contacts = $query->withCount(['consents as active_consents_count' => fn ($b) => $b->whereNull('revoked_at')->where('granted_at', '<=', now())])->latest()->paginate(25)->withQueryString();
-        $suppressed = DB::table('suppression_entries')->whereIn('phone_e164', $contacts->pluck('phone_e164'))->where('effective_at', '<=', now())->pluck('phone_e164')->flip();
+        $suppressed = app(Suppression::class)->visible()->whereIn('phone_e164', $contacts->pluck('phone_e164'))->where('effective_at', '<=', now())->pluck('phone_e164')->flip();
 
         return response()->view('contacts.directory', ['contacts' => $contacts, 'f' => $f, 'groups' => $this->groupsQuery($r)->orderBy('name')->get(), 'suppressed' => $suppressed])->header('Cache-Control', 'private, no-store');
     }
@@ -136,7 +138,7 @@ class ContactWorkspaceController extends Controller
     {
         Gate::authorize('contacts.view');
 
-        return response()->view('contacts.contact', ['contact' => $contact->load(['consents', 'groups']), 'suppression' => DB::table('suppression_entries')->where('phone_e164', $contact->phone_e164)->first(), 'groups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->orderBy('name')->get(), 'history' => DB::table('audit_logs')->where('entity_type', $contact->getMorphClass())->where('entity_id', $contact->id)->orderByDesc('id')->paginate(20)])->header('Cache-Control', 'private, no-store');
+        return response()->view('contacts.contact', ['contact' => $contact->load(['consents', 'groups']), 'suppression' => app(Suppression::class)->visible()->where('phone_e164', $contact->phone_e164)->first(), 'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->orderBy('name')->get(), 'history' => DB::table('audit_logs')->where('entity_type', $contact->getMorphClass())->where('entity_id', $contact->id)->orderByDesc('id')->paginate(20)])->header('Cache-Control', 'private, no-store');
     }
 
     public function linkGroup(Request $r, Contact $contact, Foundation $audit)
@@ -170,7 +172,7 @@ class ContactWorkspaceController extends Controller
     {
         Gate::authorize('contacts.view');
         $f = $r->validate(['q' => 'nullable|string|max:100']);
-        $query = DB::table('suppression_entries');
+        $query = app(Suppression::class)->visible();
         if (! empty($f['q'])) {
             $phone = $this->normalizedSearch($f['q']);
             $query->where(fn ($b) => $b->where('phone_e164', 'like', '%'.addcslashes($f['q'], '%_\\').'%')->when($phone, fn ($b) => $b->orWhere('phone_e164', $phone)));
@@ -187,7 +189,7 @@ class ContactWorkspaceController extends Controller
         DB::transaction(function () use ($r, $engine, $audit, $phone, $d) {
             $engine->mutex();
             app(Suppression::class)->add($phone, $d['reason'], $r->user()->id, $d['effective_at'] ?? now());
-            $audit->audit($r->user(), 'number.suppressed', $r->user(), ['scope' => 'global']);
+            $audit->audit($r->user(), 'number.suppressed', $r->user(), ['scope' => app(Tenancy::class)->current() === null ? 'global' : 'client']);
         });
 
         return back()->with('status', 'Suppression recorded. Matching numbers are excluded at dispatch from the effective time.');
@@ -214,7 +216,7 @@ class ContactWorkspaceController extends Controller
     {
         Gate::authorize('contacts.manage');
 
-        return response()->view('contacts.imports', ['batches' => ContactImport::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->latest()->paginate(25), 'groups' => ContactGroup::when(! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
+        return response()->view('contacts.imports', ['batches' => ContactImport::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->latest()->paginate(25), 'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function upload(Request $r, ImportReader $reader, Imports $imports)

@@ -15,15 +15,25 @@ class ImportContacts implements ShouldQueue
 
     public int $timeout = 45;
 
-    public function __construct(public int $batchId) {}
+    public ?int $clientId;
+
+    public function __construct(public int $batchId)
+    {
+        // Captured when authorized work is queued; never inferred from request data.
+        $this->clientId = ContactImport::findOrFail($batchId)->client_id;
+    }
 
     public function handle(Imports $imports): void
     {
+        $batch = ContactImport::withoutGlobalScopes()->findOrFail($this->batchId);
+        if ($batch->client_id !== $this->clientId) {
+            return;
+        }
         $imports->process($this->batchId);
     }
 
     public function failed(?\Throwable $e): void
     {
-        ContactImport::whereKey($this->batchId)->whereIn('status', ['queued', 'processing'])->update(['status' => 'failed']);
+        ContactImport::withoutGlobalScopes()->whereKey($this->batchId)->whereIn('status', ['queued', 'processing'])->update(['status' => 'failed']);
     }
 }

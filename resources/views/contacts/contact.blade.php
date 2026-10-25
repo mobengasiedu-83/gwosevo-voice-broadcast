@@ -2,7 +2,7 @@
 @section('title',$contact->name??'Contact')
 @section('content')
 <h2>{{ $contact->name??'Contact' }}</h2><p>#{{ $contact->id }} · {{ $contact->phone_e164 }} · {{ $contact->source }}</p>@include('contacts.nav')
-@if($suppression)<div class="notice warning">Global suppression effective {{ $suppression->effective_at }} UTC · {{ $suppression->reason }}</div>@endif
+@if($suppression)<div class="notice warning">Suppression effective {{ $suppression->effective_at }} UTC · {{ $suppression->reason }}</div>@endif
 @can('contacts.manage')<section><h2>Contact details</h2><form method="post" action="{{ route('contacts.save',$contact) }}">@csrf<label>Name<input name="name" required maxlength="255" value="{{ old('name',$contact->name) }}"></label><label>Source<input name="source" required maxlength="255" value="{{ old('source',$contact->source) }}"></label><button>Save details</button></form><p>Phone numbers are immutable here so existing consent cannot silently transfer to a different number.</p></section>@endcan
 <section><h2>Group memberships</h2>@forelse($contact->groups->filter(fn($g)=>$g->owner_id===auth()->id()||auth()->user()->can('audit.view')) as $g)<p><a href="{{ route('contacts.groups.show',$g) }}">{{ $g->name }}</a> · {{ $g->active?'Active':'Inactive' }}</p>@empty<p>No visible group memberships.</p>@endforelse
 @can('contacts.manage')<form method="post" action="{{ route('contacts.link_group',$contact) }}">@csrf<label>Add to existing group<select name="group_id" required><option value="">Choose group</option>@foreach($groups as $g)<option value="{{ $g->id }}">{{ $g->name }}</option>@endforeach</select></label><button>Add to group</button></form>@endcan</section>
