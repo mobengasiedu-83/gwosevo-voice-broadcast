@@ -301,6 +301,7 @@ For live acceptance, use an explicitly selected test recipient and verify ringin
 
 ## Documentation
 
+- [Consolidated pending implementation and release gates](docs/pending-implementation.md) — reviewed 25 October 2026 against the roadmap and current code.
 - [Current campaign and audio workflow](docs/campaign-audio-workflow.md)
 - [Contacts, groups and imports](docs/contacts-and-groups.md)
 - [Dashboard and operational health](docs/module-1-dashboard.md)

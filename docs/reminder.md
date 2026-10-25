@@ -1,5 +1,7 @@
 # Production Stability and Audio Playback Reminders
 
+For the combined implementation backlog and current stage status, see [consolidated pending implementation](pending-implementation.md). The production and payment deferrals below remain in effect.
+
 Status: Deferred until the move to production. These items are an implementation and acceptance checklist, not confirmation that production is ready.
 
 The URL-mode status exit check and the campaign execution-versus-playback report summary are separate application cleanups. Deploy and validate those changes; the tasks below remain deferred.
