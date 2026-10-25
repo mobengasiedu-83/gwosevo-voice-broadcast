@@ -1,0 +1,88 @@
+/* Shared form and page components. Keep styles independent of authorization and workflows. */
+:is(.client-portal,.workspace-page) main { --control-bg:var(--panel); --focus-ring:color-mix(in srgb,var(--blue) 24%,transparent); }
+:is(.client-portal,.workspace-page) main form:not(.filters):not(.inline-form) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:20px; margin:20px 0 0; min-width:0; }
+:is(.client-portal,.workspace-page) main form>label,:is(.client-portal,.workspace-page) main .form-field { display:flex; flex-direction:column; gap:8px; min-width:0; max-width:none; margin:0; font-size:13px; font-weight:600; line-height:1.5; }
+:is(.client-portal,.workspace-page) main .form-field label { margin:0; font-size:13px; }
+:is(.client-portal,.workspace-page) main :is(input,select,textarea) { font:inherit; width:100%; min-width:0; min-height:44px; margin:0; padding:11px 13px; border:1px solid var(--border); border-radius:9px; background:var(--control-bg); color:var(--ink); box-shadow:0 1px 2px #00000003; }
+:is(.client-portal,.workspace-page) main textarea { min-height:110px; resize:vertical; line-height:1.6; }
+:is(.client-portal,.workspace-page) main :is(input,select,textarea):focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-color:var(--blue); box-shadow:0 0 0 4px var(--focus-ring); }
+:is(.client-portal,.workspace-page) main :is(input,textarea)::placeholder { color:var(--muted); opacity:.75; font-weight:400; }
+:is(.client-portal,.workspace-page) main :is(input[type=checkbox],input[type=radio]) { flex:0 0 18px; width:18px; height:18px; min-height:18px; padding:0; margin:2px 0 0; accent-color:var(--accent,var(--blue)); box-shadow:none; }
+:is(.client-portal,.workspace-page) main label:has(>input:is([type=checkbox],[type=radio])) { display:flex; flex-direction:row; align-items:flex-start; gap:10px; font-weight:500; line-height:1.6; }
+:is(.client-portal,.workspace-page) main input[type=file] { font-size:12px; padding:7px; }
+:is(.client-portal,.workspace-page) main input[type=file]::file-selector-button { padding:7px 12px; margin-right:12px; border:0; border-radius:6px; background:var(--soft,var(--bg)); color:var(--ink); cursor:pointer; }
+:is(.client-portal,.workspace-page) main fieldset { grid-column:1/-1; min-width:0; width:100%; margin:0; padding:20px; border:1px solid var(--border); border-radius:10px; }
+:is(.client-portal,.workspace-page) main legend { padding:0 8px; color:var(--ink); font-size:13px; font-weight:650; }
+:is(.client-portal,.workspace-page) main form>:is(fieldset,p,.form-actions,.full-width,.field-grid,.form-grid) { grid-column:1/-1; }
+:is(.client-portal,.workspace-page) main .field-grid,:is(.client-portal,.workspace-page) main .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; min-width:0; }
+:is(.client-portal,.workspace-page) main .field-grid>label,:is(.client-portal,.workspace-page) main .form-grid>label { display:flex; flex-direction:column; gap:8px; min-width:0; font-size:13px; font-weight:600; }
+:is(.client-portal,.workspace-page) main :is(button,.button) { display:inline-flex; justify-content:center; align-items:center; gap:8px; width:fit-content; max-width:100%; min-height:42px; margin:0; padding:10px 16px; border:1px solid transparent; border-radius:8px; background:var(--accent,#476df6); color:#fff; font:600 13px/1.5 system-ui,sans-serif; text-decoration:none; cursor:pointer; }
+:is(.client-portal,.workspace-page) main form>button { grid-column:1/-1; }
+:is(.client-portal,.workspace-page) main .button.secondary,:is(.client-portal,.workspace-page) main button.secondary { color:var(--ink); background:var(--panel); border-color:var(--border); }
+:is(.client-portal,.workspace-page) main .button.danger,:is(.client-portal,.workspace-page) main button.danger { color:#c64050; background:transparent; border-color:color-mix(in srgb,#c64050 35%,var(--border)); }
+:is(.client-portal,.workspace-page) main :is(button,.button):focus-visible,:is(.client-portal,.workspace-page) main a:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+:is(.client-portal,.workspace-page) main :is(button,.button):disabled { opacity:.45; cursor:not-allowed; }
+:is(.client-portal,.workspace-page) main :is(button,.button):not(:disabled):hover { filter:brightness(1.08); }
+:is(.client-portal,.workspace-page) main .form-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:4px; padding-top:18px; border-top:1px solid var(--border); }
+:is(.client-portal,.workspace-page) main .form-actions p { margin:0; color:var(--muted); font-size:12px; }
+:is(.client-portal,.workspace-page) main .help-text { color:var(--muted); font-size:12px; font-weight:400; line-height:1.65; margin:0; }
+:is(.client-portal,.workspace-page) main .choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+:is(.client-portal,.workspace-page) main .choice-grid label { display:flex; align-items:flex-start; gap:10px; padding:13px 14px; border:1px solid var(--border); border-radius:8px; font-size:13px; cursor:pointer; }
+:is(.client-portal,.workspace-page) main .choice-grid label:has(input:checked) { border-color:var(--blue); background:var(--soft,var(--bg)); }
+:is(.client-portal,.workspace-page) main .choice-grid strong { display:block; font-weight:600; }
+:is(.client-portal,.workspace-page) main .choice-grid small { display:block; margin-top:3px; color:var(--muted); font-size:11px; font-weight:400; }
+:is(.client-portal,.workspace-page) main .inline-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0; }
+:is(.client-portal,.workspace-page) main td form:not(.inline-form) { grid-template-columns:1fr; gap:12px; margin:0; }
+:is(.client-portal,.workspace-page) main td form+form { margin-top:12px; }
+:is(.client-portal,.workspace-page) main td button { font-size:12px; min-height:38px; padding:8px 12px; }
+:is(.client-portal,.workspace-page) main .page-tabs { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 24px; padding:5px; border:1px solid var(--border); border-radius:10px; background:var(--panel); }
+:is(.client-portal,.workspace-page) main .page-tabs a { display:block; padding:9px 14px; border-radius:7px; color:var(--muted); font-size:12px; font-weight:550; text-decoration:none; }
+:is(.client-portal,.workspace-page) main .page-tabs a[aria-current=page] { background:var(--soft,var(--bg)); color:var(--blue); font-weight:650; }
+:is(.client-portal,.workspace-page) main .page-tabs a:hover { background:var(--bg); color:var(--ink); }
+:is(.client-portal,.workspace-page) main .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:20px; }
+:is(.client-portal,.workspace-page) main .section-heading h2 { margin:0; font-size:18px; }
+:is(.client-portal,.workspace-page) main .section-heading p { margin:6px 0 0; max-width:75ch; color:var(--muted); font-size:13px; line-height:1.7; }
+:is(.client-portal,.workspace-page) main .section-kicker { font-size:10px; letter-spacing:1.3px; color:var(--blue); font-weight:700; text-transform:uppercase; margin-bottom:6px; }
+:is(.client-portal,.workspace-page) main .stack { display:grid; gap:22px; }
+:is(.client-portal,.workspace-page) main .stack>section { margin:0; }
+:is(.client-portal,.workspace-page) main .resource-list { list-style:none; padding:0; margin:0; }
+:is(.client-portal,.workspace-page) main .resource-list>li { padding:18px 0; border-top:1px solid var(--border); }
+:is(.client-portal,.workspace-page) main .resource-list>li:first-child { border-top:0; }
+:is(.client-portal,.workspace-page) main .empty-state { text-align:center; padding:28px 20px; border:1px dashed var(--border); border-radius:10px; color:var(--muted); }
+:is(.client-portal,.workspace-page) main .empty-state h3 { margin:0 0 6px; color:var(--ink); font-size:15px; }
+:is(.client-portal,.workspace-page) main .empty-state p { margin:0; font-size:12px; }
+:is(.client-portal,.workspace-page) main .quota-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin:18px 0; }
+:is(.client-portal,.workspace-page) main .quota-item { padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--bg); }
+:is(.client-portal,.workspace-page) main .quota-item span { display:block; font-size:11px; color:var(--muted); }
+:is(.client-portal,.workspace-page) main .quota-item strong { display:block; font-size:23px; margin-top:5px; letter-spacing:-.5px; }
+:is(.client-portal,.workspace-page) main .member-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
+:is(.client-portal,.workspace-page) main .member-card { border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:22px; min-width:0; }
+:is(.client-portal,.workspace-page) main .member-header { display:flex; align-items:flex-start; gap:12px; margin-bottom:16px; }
+:is(.client-portal,.workspace-page) main .member-header h3 { margin:0 0 4px; font-size:16px; }
+:is(.client-portal,.workspace-page) main .member-avatar { display:grid; place-items:center; flex:0 0 42px; height:42px; border-radius:12px; background:var(--soft,var(--bg)); color:var(--blue); font-size:17px; font-weight:650; }
+:is(.client-portal,.workspace-page) main .member-contact { margin:0; overflow-wrap:anywhere; font-size:12px; }
+:is(.client-portal,.workspace-page) main .security-actions { display:grid; gap:12px; margin-top:20px; padding-top:18px; border-top:1px solid var(--border); }
+:is(.client-portal,.workspace-page) main .security-actions summary { cursor:pointer; font-size:12px; color:var(--muted); }
+:is(.client-portal,.workspace-page) main .member-card .security-actions form { grid-template-columns:1fr; margin-top:12px; }
+:is(.client-portal,.workspace-page) main .member-card .security-actions form:first-child { margin-top:0; }
+@media(max-width:1100px) { :is(.client-portal,.workspace-page) main .quota-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } :is(.client-portal,.workspace-page) main .member-grid { grid-template-columns:1fr; } }
+@media(max-width:640px) {
+ :is(.client-portal,.workspace-page) main form:not(.filters):not(.inline-form),:is(.client-portal,.workspace-page) main .field-grid,:is(.client-portal,.workspace-page) main .form-grid,:is(.client-portal,.workspace-page) main .choice-grid { grid-template-columns:1fr; }
+ :is(.client-portal,.workspace-page) main .quota-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ :is(.client-portal,.workspace-page) main .form-actions { align-items:stretch; flex-direction:column; }
+ :is(.client-portal,.workspace-page) main .form-actions .button { width:100%; }
+ :is(.client-portal,.workspace-page) main .page-tabs { flex-wrap:nowrap; overflow-x:auto; }
+ :is(.client-portal,.workspace-page) main .page-tabs a { white-space:nowrap; }
+ :is(.client-portal,.workspace-page) main .member-card { padding:18px; }
+}
+
+:is(.client-portal,.workspace-page) main .account-summary-line{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 20px}
+:is(.client-portal,.workspace-page) main .verification-status{display:inline-block;margin-left:5px;color:var(--muted);font-size:10px}
+:is(.client-portal,.workspace-page) main .form-grid-three{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.client-portal .campaign-wizard fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.client-portal .campaign-wizard fieldset>p{grid-column:1/-1}
+@media(max-width:900px){:is(.client-portal,.workspace-page) main .form-grid-three{grid-template-columns:1fr!important}}
+@media(max-width:640px){.client-portal .campaign-wizard fieldset{grid-template-columns:1fr}.section-heading{flex-wrap:wrap}}
+:is(.client-portal,.workspace-page) main .choice-grid>.full-width{grid-column:1/-1}
+.client-portal .secret-shell{max-width:760px;margin:8vh auto;padding:24px}
+.client-portal .secret-shell textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px;min-height:120px;overflow-wrap:anywhere}
