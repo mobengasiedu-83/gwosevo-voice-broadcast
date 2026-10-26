@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -34,20 +35,27 @@ class IdentityController extends Controller
     {
         abort_unless(config('client_auth.registration_enabled'), 404);
         $details = $request->validate(['name' => 'required|string|max:255', 'account_name' => 'required|string|max:255', 'country' => 'required|string|max:80', 'broadcasting_purpose' => 'required|string|max:1000', 'terms' => 'required|accepted']);
-        $identity = $request->validate(['channel' => 'required|in:email,sms', 'identifier' => 'required|string|max:254']);
+        $identity = $request->validate(['channel' => ['required', Rule::in($this->channels())], 'email' => 'required|string|max:254', 'phone' => 'required|string|max:32']);
+        $details['email'] = $challenges->normalize('email', $identity['email'], 'email');
+        $details['phone_e164'] = $challenges->normalize('sms', $identity['phone'], 'phone');
         $details['terms_version'] = config('client_auth.terms_version');
         $details['accepted_at'] = now()->toISOString();
-        $challenges->start($request, 'register', $identity['channel'], $identity['identifier'], $details);
+        $challenges->start($request, 'register', $identity['channel'], $identity['channel'] === 'email' ? $details['email'] : $details['phone_e164'], $details);
 
         return redirect()->route('identity.verify')->with('status', 'If this contact is eligible, a verification code has been sent.');
     }
 
     public function startRecovery(Request $request, Challenges $challenges)
     {
-        $identity = $request->validate(['channel' => 'required|in:email,sms', 'identifier' => 'required|string|max:254']);
+        $identity = $request->validate(['channel' => ['required', Rule::in($this->channels())], 'identifier' => 'required|string|max:254']);
         $challenges->start($request, 'recover', $identity['channel'], $identity['identifier'], []);
 
         return redirect()->route('identity.verify')->with('status', 'If this contact is eligible, a verification code has been sent.');
+    }
+
+    private function channels(): array
+    {
+        return config('client_auth.sms_driver') === 'txtconnect' ? ['email', 'sms'] : ['email'];
     }
 
     public function verification(Request $request)
@@ -127,12 +135,16 @@ class IdentityController extends Controller
             $user = $challenges->consume($request, $purpose, function ($challenge, $details) use ($purpose, $data) {
                 if ($purpose === 'register') {
                     abort_unless(config('client_auth.registration_enabled'), 404);
-                    if (app(Challenges::class)->user($challenge->channel, $challenge->identifier)) {
+                    // Challenges issued before both contacts were collected keep the verified identifier only.
+                    $email = $details['email'] ?? ($challenge->channel === 'email' ? $challenge->identifier : null);
+                    $phone = $details['phone_e164'] ?? ($challenge->channel === 'sms' ? $challenge->identifier : null);
+                    $identities = app(Challenges::class);
+                    if (($email && $identities->user('email', $email)) || ($phone && $identities->user('sms', $phone))) {
                         throw ValidationException::withMessages(['code' => 'Registration is unavailable. Try signing in or recovering your password.']);
                     }
                     $client = Client::create(['name' => $details['account_name'], 'status' => config('client_auth.auto_activate') ? 'active' : 'pending', 'profile' => ['country' => $details['country'], 'broadcasting_purpose' => $details['broadcasting_purpose']]]);
                     $user = new User;
-                    $user->forceFill(['name' => $details['name'], 'password' => $data['password'], 'email' => $challenge->channel === 'email' ? $challenge->identifier : null, 'phone_e164' => $challenge->channel === 'sms' ? $challenge->identifier : null, 'email_verified_at' => $challenge->channel === 'email' ? now() : null, 'phone_verified_at' => $challenge->channel === 'sms' ? now() : null, 'terms_accepted_at' => $details['accepted_at'], 'terms_version' => $details['terms_version']])->save();
+                    $user->forceFill(['name' => $details['name'], 'password' => $data['password'], 'email' => $email, 'phone_e164' => $phone, 'email_verified_at' => $challenge->channel === 'email' ? now() : null, 'phone_verified_at' => $challenge->channel === 'sms' ? now() : null, 'terms_accepted_at' => $details['accepted_at'], 'terms_version' => $details['terms_version']])->save();
                     ClientMembership::create(['client_id' => $client->id, 'user_id' => $user->id, 'role' => 'owner', 'status' => 'active']);
                     $user->assignRole('Client Member');
                     app(Foundation::class)->audit($user, 'client.registered', $client, ['verified_channel' => $challenge->channel, 'terms_version' => $details['terms_version']]);
@@ -176,7 +188,7 @@ class IdentityController extends Controller
     public function changeContact(Request $request, Challenges $challenges)
     {
         abort_unless($request->user()->clientMembership()->exists(), 403);
-        $data = $request->validate(['channel' => 'required|in:email,sms', 'identifier' => 'required|string|max:254', 'current_password' => 'required|current_password:web']);
+        $data = $request->validate(['channel' => ['required', Rule::in($this->channels())], 'identifier' => 'required|string|max:254', 'current_password' => 'required|current_password:web']);
         $challenges->start($request, 'change', $data['channel'], $data['identifier'], []);
 
         return redirect()->route('identity.verify')->with('status', 'If eligible, a code has been sent to your new contact.');

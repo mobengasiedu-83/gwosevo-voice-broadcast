@@ -17,11 +17,11 @@ use Illuminate\Validation\ValidationException;
 
 class Challenges
 {
-    public function normalize(string $channel, string $identifier): string
+    public function normalize(string $channel, string $identifier, string $field = 'identifier'): string
     {
         if ($channel === 'email') {
             $identifier = mb_strtolower(trim($identifier));
-            validator(['identifier' => $identifier], ['identifier' => 'required|email:rfc|max:254'])->validate();
+            validator([$field => $identifier], [$field => 'required|email:rfc|max:254'])->validate();
 
             return $identifier;
         }
@@ -31,7 +31,7 @@ class Challenges
         } elseif (preg_match('/^233[235][0-9]{8}$/', $identifier)) {
             $identifier = '+'.$identifier;
         }
-        validator(['identifier' => $identifier], ['identifier' => ['required', 'regex:/^\+[1-9][0-9]{7,14}$/']])->validate();
+        validator([$field => $identifier], [$field => ['required', 'regex:/^\+[1-9][0-9]{7,14}$/']])->validate();
 
         return $identifier;
     }
@@ -41,12 +41,36 @@ class Challenges
         return $channel === 'email' ? User::whereRaw('LOWER(email) = ?', [$identifier])->first() : User::where('phone_e164', $identifier)->first();
     }
 
+    /**
+     * Registration collects both contacts, so neither may already belong to an account.
+     */
+    private function contactsAvailable(array $details): bool
+    {
+        foreach (['email' => 'email', 'phone_e164' => 'sms'] as $field => $channel) {
+            $value = $details[$field] ?? null;
+            if ($value && $this->user($channel, $channel === 'email' ? mb_strtolower($value) : $value)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Point validation errors at the contact field shown by the current form.
+     */
+    private function contactField(string $purpose, string $channel): string
+    {
+        return $purpose === 'register' ? ($channel === 'email' ? 'email' : 'phone') : 'identifier';
+    }
+
     public function start(Request $request, string $purpose, string $channel, string $identifier, array $details): void
     {
-        $identifier = $this->normalize($channel, $identifier);
+        $field = $this->contactField($purpose, $channel);
+        $identifier = $this->normalize($channel, $identifier, $field);
         $lock = Cache::lock('identity-issue:'.hash('sha256', $identifier), 30);
         if (! $lock->get()) {
-            throw ValidationException::withMessages(['identifier' => 'A verification request is already in progress. Please wait.']);
+            throw ValidationException::withMessages([$field => 'A verification request is already in progress. Please wait.']);
         }
         try {
             $this->issue($request, $purpose, $channel, $identifier, $details);
@@ -58,18 +82,20 @@ class Challenges
     private function issue(Request $request, string $purpose, string $channel, string $identifier, array $details): void
     {
         abort_unless(in_array($purpose, ['register', 'recover', 'change', 'activate'], true), 422);
-        $identifier = $this->normalize($channel, $identifier);
+        $field = $this->contactField($purpose, $channel);
+        $identifier = $this->normalize($channel, $identifier, $field);
         $key = 'identity-send:'.hash('sha256', $identifier);
         if (RateLimiter::tooManyAttempts($key, 3) || RateLimiter::tooManyAttempts('identity-cooldown:'.$key, 1) || RateLimiter::tooManyAttempts('identity-ip:'.$request->ip(), 10)) {
             Log::notice('identity.otp_throttled', ['identifier_hash' => hash('sha256', $identifier), 'purpose' => $purpose]);
-            throw ValidationException::withMessages(['identifier' => 'Please wait before requesting another verification code.']);
+            throw ValidationException::withMessages([$field => 'Please wait before requesting another verification code.']);
         }
         RateLimiter::hit($key, 900);
         RateLimiter::hit('identity-cooldown:'.$key, 60);
         RateLimiter::hit('identity-ip:'.$request->ip(), 3600);
         $user = $this->user($channel, $identifier);
         $eligible = match ($purpose) {
-            'register', 'change' => $user === null,
+            'register' => $user === null && $this->contactsAvailable($details),
+            'change' => $user === null,
             'activate' => $user && app(Tenancy::class)->usable($user) && $user->clientMembership()->exists() && ($channel === 'email' ? ! $user->email_verified_at : ! $user->phone_verified_at),
             'recover' => $user && app(Tenancy::class)->usable($user) && ($channel === 'email' ? ($user->email_verified_at || ! $user->clientMembership()->exists()) : $user->phone_verified_at),
         };
@@ -101,7 +127,7 @@ class Challenges
             } catch (\Throwable $e) {
                 DB::table('identity_challenges')->where('id', $id)->update(['consumed_at' => now()]);
                 $request->session()->forget('identity');
-                throw ValidationException::withMessages(['identifier' => 'Verification delivery is unavailable. Please try again later.']);
+                throw ValidationException::withMessages([$field => 'Verification delivery is unavailable. Please try again later.']);
             }
         }
     }

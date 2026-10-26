@@ -294,7 +294,7 @@ Install development dependencies before running automated checks:
     composer install
     php artisan test
 
-Tests cover permissions, ownership, contacts/imports, campaign lifecycle, configured connection resolution, caller identity, scheduling, admission, AMI events, DND, IVR and protected media delivery. Automated tests use their configured test database and fake media storage; they do not establish that a production carrier or RTP path works.
+Tests cover permissions, ownership, contacts/imports, campaign lifecycle, configured connection resolution, caller identity, scheduling, admission, AMI events, DND, IVR and protected media delivery. `phpunit.xml` pins `APP_ENV=testing` with in-memory SQLite and array cache/session drivers, including duplicate `<server>` entries because phpdotenv reads `$_SERVER` before `$_ENV`; variables exported by the shell (for example a ServBay site environment) therefore cannot point the suite at the local MySQL database. Automated tests use fake media storage and fake delivery providers; they do not establish that a production carrier or RTP path works.
 
 For live acceptance, use an explicitly selected test recipient and verify ringing, audible media and the application's call/playback outcomes. Keep credentials and call-specific media tokens out of shared logs.
 

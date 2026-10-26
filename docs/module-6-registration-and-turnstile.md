@@ -4,7 +4,7 @@ The supplied specification requires registration by email or phone, verification
 
 ## Available screens
 
-- `/register`: name, account name, country, broadcasting purpose, registration notice acceptance and the selected email/SMS identifier.
+- `/register`: name, account name, country, broadcasting purpose, both an email address and a mobile number, the contact that should receive the verification code, and registration notice acceptance.
 - `/verify-contact`: six-digit OTP verification and controlled resend.
 - `/set-password`: password setup after successful verification, with matching confirmation and at least 12 characters including uppercase, lowercase, numbers and symbols.
 - `/login`: recorded email or phone and password after either contact has been verified. Ordinary sign-in does not send an OTP.
@@ -12,7 +12,7 @@ The supplied specification requires registration by email or phone, verification
 - `/account/security`: accessible from the client account menu. Requires the current password and a fresh OTP to add or replace a contact. The other contact's verification status is unchanged.
 - `/registration-notice`: describes data collected, verification, account boundaries and the accepted notice version. It is an onboarding notice; the operator's full service terms and retention policy remain separately maintained.
 
-Registration requires verification of one selected contact. Once either contact is verified, the client can sign in using its recorded email or phone plus password without a new OTP or a dependency on email/SMS delivery. This does not mark the other contact verified: recovery and replacement still require verified-contact checks. An administrator-provisioned client with no verified contacts completes verification after a correct password before gaining access.
+Registration collects both an email address and a mobile number, and requires verification of the contact selected as the code recipient. Neither contact may already belong to an account; a duplicate on either address receives the same generic response without sending a code. Once either contact is verified, the client can sign in using its recorded email or phone plus password without a new OTP or a dependency on email/SMS delivery. This does not mark the other contact verified: recovery and replacement still require verified-contact checks. An administrator-provisioned client with no verified contacts completes verification after a correct password before gaining access.
 
 ## Verification controls
 

@@ -38,7 +38,7 @@ class ClientIdentityTest extends TestCase
 
     private function registration(array $overrides = []): array
     {
-        return array_merge(['name' => 'Test Client', 'account_name' => 'Test Account', 'country' => 'Ghana', 'broadcasting_purpose' => 'Customer updates', 'terms' => '1', 'channel' => 'email', 'identifier' => 'new@example.com'], $overrides);
+        return array_merge(['name' => 'Test Client', 'account_name' => 'Test Account', 'country' => 'Ghana', 'broadcasting_purpose' => 'Customer updates', 'terms' => '1', 'channel' => 'email', 'email' => 'new@example.com', 'phone' => '0241234567'], $overrides);
     }
 
     private function code(): string
@@ -72,6 +72,8 @@ class ClientIdentityTest extends TestCase
         $this->post('/set-password', ['password' => $this->password, 'password_confirmation' => $this->password])->assertRedirect('/dashboard');
         $user = User::firstOrFail();
         $this->assertAuthenticatedAs($user);
+        $this->assertSame('new@example.com', $user->email);
+        $this->assertSame('+233241234567', $user->phone_e164);
         $this->assertNotNull($user->email_verified_at);
         $this->assertNull($user->phone_verified_at);
         $this->assertTrue(Hash::check($this->password, $user->password));
@@ -80,10 +82,10 @@ class ClientIdentityTest extends TestCase
         $this->assertNotNull(DB::table('identity_challenges')->value('consumed_at'));
     }
 
-    public function test_sms_registration_reuses_txtconnect_configuration_and_verifies_only_phone(): void
+    public function test_sms_registration_records_both_contacts_and_verifies_only_phone(): void
     {
         Http::fake(['api.txtconnect.net/*' => Http::response(['data' => ['status_code' => '000', 'in_error' => false]], 200)]);
-        $this->post('/register', $this->registration(['channel' => 'sms', 'identifier' => '0241234567']))->assertRedirect('/verify-contact');
+        $this->post('/register', $this->registration(['channel' => 'sms']))->assertRedirect('/verify-contact');
         $request = Http::recorded()->first()[0];
         $this->assertSame('233241234567', $request['to']);
         $this->assertTrue($request->hasHeader('Authorization', 'Bearer test-token'));
@@ -92,10 +94,44 @@ class ClientIdentityTest extends TestCase
         $this->post('/set-password', ['password' => $this->password, 'password_confirmation' => $this->password])->assertRedirect('/dashboard');
         $user = User::firstOrFail();
         $this->assertSame('+233241234567', $user->phone_e164);
-        $this->assertNull($user->email);
+        $this->assertSame('new@example.com', $user->email);
         $this->assertNull($user->email_verified_at);
         $this->assertNotNull($user->phone_verified_at);
         Mail::assertNothingSent();
+    }
+
+    public function test_registration_requires_a_valid_email_and_mobile_number(): void
+    {
+        $this->post('/register', $this->registration(['email' => 'not-an-email']))->assertSessionHasErrors('email');
+        $this->post('/register', $this->registration(['phone' => 'not-a-number']))->assertSessionHasErrors('phone');
+        $this->post('/register', $this->registration(['phone' => '']))->assertSessionHasErrors('phone');
+        $this->assertDatabaseCount('identity_challenges', 0);
+        Mail::assertNothingSent();
+        Http::assertNothingSent();
+    }
+
+    public function test_registration_does_not_send_a_code_when_the_mobile_number_belongs_to_an_account(): void
+    {
+        User::factory()->create(['phone_e164' => '+233241234567', 'phone_verified_at' => now()]);
+        $this->post('/register', $this->registration())->assertRedirect('/verify-contact');
+        Mail::assertNothingSent();
+        $this->assertNull(DB::table('identity_challenges')->value('verified_at'));
+    }
+
+    public function test_registration_does_not_send_a_code_when_the_email_belongs_to_an_account(): void
+    {
+        Http::fake();
+        User::factory()->create(['email' => 'new@example.com']);
+        $this->post('/register', $this->registration(['channel' => 'sms']))->assertRedirect('/verify-contact');
+        Http::assertNothingSent();
+        Mail::assertNothingSent();
+    }
+
+    public function test_email_recovery_keeps_using_a_single_identifier_field(): void
+    {
+        $user = $this->verifiedClient();
+        $this->post('/forgot-password', ['channel' => 'email', 'identifier' => $user->email])->assertRedirect('/verify-contact');
+        Mail::assertSent(IdentityCode::class, 1);
     }
 
     public function test_otp_expiry_and_session_binding_are_enforced(): void
@@ -132,7 +168,7 @@ class ClientIdentityTest extends TestCase
     {
         $this->post('/register', $this->registration());
         $oldId = DB::table('identity_challenges')->value('id');
-        $this->post('/verify-contact/resend')->assertSessionHasErrors('identifier');
+        $this->post('/verify-contact/resend')->assertSessionHasErrors('email');
         $this->travel(61)->seconds();
         $this->post('/verify-contact/resend')->assertRedirect('/verify-contact');
         $this->assertNotNull(DB::table('identity_challenges')->where('id', $oldId)->value('consumed_at'));
@@ -235,7 +271,7 @@ class ClientIdentityTest extends TestCase
     public function test_txtconnect_rejected_response_never_leaves_a_usable_challenge(): void
     {
         Http::fake(['api.txtconnect.net/*' => Http::response(['data' => ['status_code' => '100', 'in_error' => true]], 200)]);
-        $this->post('/register', $this->registration(['channel' => 'sms', 'identifier' => '0241234567']))->assertSessionHasErrors('identifier');
+        $this->post('/register', $this->registration(['channel' => 'sms']))->assertSessionHasErrors('phone');
         $this->assertNotNull(DB::table('identity_challenges')->value('consumed_at'));
         $this->assertDatabaseCount('users', 0);
     }
@@ -295,7 +331,7 @@ class ClientIdentityTest extends TestCase
             $this->post('/verify-contact/resend')->assertRedirect('/verify-contact');
         }
         $this->travel(61)->seconds();
-        $this->post('/verify-contact/resend')->assertSessionHasErrors('identifier');
+        $this->post('/verify-contact/resend')->assertSessionHasErrors('email');
         Mail::assertSent(IdentityCode::class, 3);
     }
 
