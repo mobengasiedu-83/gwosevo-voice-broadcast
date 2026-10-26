@@ -1,0 +1,9 @@
+@extends('dashboard.layout')
+@section('title','Account profile')
+@section('content')
+<h1>Account profile</h1><p>This business profile is shared by members of {{ $client->name }}. Profile contact details do not change verified sign-in contacts.</p><p><a href="{{ route('account.security') }}">Password, sessions & verified contacts →</a></p>
+<section><form method="post" action="{{ route('account.profile.save') }}" class="stack-form">@csrf
+<label>Account type<select name="account_type"><option value="">Not specified</option>@foreach(['individual','business'] as $type)<option @selected(old('account_type',$client->profile['account_type']??'')===$type)>{{ $type }}</option>@endforeach</select></label>
+@foreach(['name'=>'Account name','business_name'=>'Business name (optional)','contact_name'=>'Contact person (optional)','contact_email'=>'Business email (optional)','contact_phone'=>'Business phone (optional)','country'=>'Country','address'=>'Address (optional)','broadcasting_purpose'=>'Broadcasting purpose'] as $field=>$label)<label>{{ $label }}<input name="{{ $field }}" value="{{ old($field,$field==='name'?$client->name:($client->profile[$field]??'')) }}" @required($field==='name') maxlength="{{ in_array($field,['address','broadcasting_purpose'])?1000:($field==='contact_phone'?40:($field==='country'?80:254)) }}"></label>@endforeach<button>Save profile</button></form></section>
+<section><h2>Notification display</h2><form method="post" action="{{ route('account.preferences') }}">@csrf<input type="hidden" name="notification_badge" value="0"><label><input type="checkbox" name="notification_badge" value="1" @checked(auth()->user()->portal_preferences['notification_badge']??true)> Show my unread notice badge</label><button>Save preference</button></form><p>Notices remain in your inbox. Email and SMS event subscriptions belong to the later notifications module.</p></section>
+@endsection

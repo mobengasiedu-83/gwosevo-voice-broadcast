@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -60,6 +61,7 @@ class Challenges
         $identifier = $this->normalize($channel, $identifier);
         $key = 'identity-send:'.hash('sha256', $identifier);
         if (RateLimiter::tooManyAttempts($key, 3) || RateLimiter::tooManyAttempts('identity-cooldown:'.$key, 1) || RateLimiter::tooManyAttempts('identity-ip:'.$request->ip(), 10)) {
+            Log::notice('identity.otp_throttled', ['identifier_hash' => hash('sha256', $identifier), 'purpose' => $purpose]);
             throw ValidationException::withMessages(['identifier' => 'Please wait before requesting another verification code.']);
         }
         RateLimiter::hit($key, 900);
@@ -68,11 +70,14 @@ class Challenges
         $user = $this->user($channel, $identifier);
         $eligible = match ($purpose) {
             'register', 'change' => $user === null,
-            'activate' => $user && app(Tenancy::class)->usable($user) && $user->clientMembership()->exists() && ! $user->email_verified_at && ! $user->phone_verified_at,
+            'activate' => $user && app(Tenancy::class)->usable($user) && $user->clientMembership()->exists() && ($channel === 'email' ? ! $user->email_verified_at : ! $user->phone_verified_at),
             'recover' => $user && app(Tenancy::class)->usable($user) && ($channel === 'email' ? ($user->email_verified_at || ! $user->clientMembership()->exists()) : $user->phone_verified_at),
         };
         $details['eligible'] = (bool) $eligible;
         $details['user_id'] = $purpose === 'change' ? $request->user()->id : (in_array($purpose, ['recover', 'activate'], true) ? $user?->id : null);
+        if ($purpose !== 'register') {
+            $details['auth_version'] = (int) ($purpose === 'change' ? $request->user()->auth_version : $user?->auth_version);
+        }
         $id = (string) Str::uuid();
         $secret = bin2hex(random_bytes(32));
         $code = (string) random_int(100000, 999999);
@@ -118,6 +123,7 @@ class Challenges
     {
         $challenge = DB::table('identity_challenges')->where('id', $request->session()->get('identity.id', ''))->lockForUpdate()->first();
         if (! $challenge || ! hash_equals($challenge->session_hash, hash('sha256', (string) $request->session()->get('identity.secret'))) || $challenge->purpose !== $request->session()->get('identity.purpose') || $challenge->consumed_at || CarbonImmutable::parse($challenge->expires_at)->isPast()) {
+            Log::notice('identity.otp_unavailable', ['purpose' => $request->session()->get('identity.purpose')]);
             throw ValidationException::withMessages(['code' => 'Verification expired or unavailable. Start again.']);
         }
         $challenge->identifier = Crypt::decryptString($challenge->identifier);
@@ -145,6 +151,7 @@ class Challenges
             return true;
         });
         if (! $valid) {
+            Log::notice('identity.otp_rejected', ['challenge_id' => $request->session()->get('identity.id'), 'purpose' => $request->session()->get('identity.purpose')]);
             throw ValidationException::withMessages(['code' => 'Invalid or already used code. Request a new code if needed.']);
         }
     }
@@ -168,6 +175,12 @@ class Challenges
             $details = json_decode(Crypt::decryptString($challenge->details), true, 512, JSON_THROW_ON_ERROR);
             if (! $details['eligible']) {
                 abort(422);
+            }
+            if ($purpose !== 'register') {
+                $user = User::whereKey($details['user_id'])->lockForUpdate()->first();
+                if (! $user || (int) $user->auth_version !== (int) ($details['auth_version'] ?? -1)) {
+                    throw ValidationException::withMessages(['code' => 'Account security changed. Start verification again.']);
+                }
             }
             $result = $complete($challenge, $details);
             DB::table('identity_challenges')->where('id', $challenge->id)->update(['consumed_at' => now()]);

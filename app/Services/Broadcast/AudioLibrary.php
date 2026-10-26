@@ -5,11 +5,13 @@ namespace App\Services\Broadcast;
 use App\Models\AudioFile;
 use App\Models\Campaign;
 use App\Models\User;
+use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 class AudioLibrary
@@ -17,6 +19,7 @@ class AudioLibrary
     public function upload(User $actor, UploadedFile $file, string $name): AudioFile
     {
         Gate::forUser($actor)->authorize('audio.manage');
+        Validator::make(['name' => $name], ['name' => 'required|string|max:255'])->validate();
         $ready = app(Readiness::class);
         if ($file->getSize() > config('voice_broadcast.max_audio_bytes') || ! in_array($file->getMimeType(), ['audio/wav', 'audio/x-wav', 'audio/vnd.wave'], true)) {
             $ready->fail('Upload a PCM WAV file within the size limit.');
@@ -88,11 +91,11 @@ class AudioLibrary
             if ($audio->status !== 'pending') {
                 app(Readiness::class)->fail('Only pending audio can be approved.');
             }
-            if (! Storage::disk('local')->exists($audio->storage_key) || ! hash_equals($audio->checksum, hash_file('sha256', Storage::disk('local')->path($audio->storage_key)))) {
+            if (! $audio->checksum || ! Storage::disk('local')->exists($audio->storage_key ?? '') || ! hash_equals($audio->checksum, hash_file('sha256', Storage::disk('local')->path($audio->storage_key)))) {
                 app(Readiness::class)->fail('Audio checksum mismatch.');
             }
             $audio->update(['status' => 'approved', 'approved_by' => $actor->id, 'approved_at' => now()]);
-            foreach (Campaign::where('status', 'draft')->whereNull('archived_at')->whereIn('configuration->audio_id', [$audio->id, (string) $audio->id])->lockForUpdate()->get() as $campaign) {
+            foreach (Campaign::where('client_id', $audio->client_id)->where('status', 'draft')->whereNull('archived_at')->whereIn('configuration->audio_id', [$audio->id, (string) $audio->id])->lockForUpdate()->get() as $campaign) {
                 $campaign->update(['status' => 'ready']);
                 app(Foundation::class)->audit($actor, 'campaign.audio_ready', $campaign, ['audio_id' => $audio->id]);
             }
@@ -103,6 +106,8 @@ class AudioLibrary
     public function reject(User $actor, AudioFile $audio, string $reason): void
     {
         Gate::forUser($actor)->authorize('audio.approve');
+        $reason = trim($reason);
+        Validator::make(compact('reason'), ['reason' => 'required|string|max:2000'])->validate();
         DB::transaction(function () use ($actor, $audio, $reason) {
             app(Engine::class)->mutex();
             $audio = AudioFile::whereKey($audio->id)->lockForUpdate()->firstOrFail();
@@ -121,9 +126,12 @@ class AudioLibrary
         DB::transaction(function () use ($actor, $audio) {
             app(Engine::class)->mutex();
             $audio = AudioFile::whereKey($audio->id)->lockForUpdate()->firstOrFail();
-            abort_unless($audio->uploaded_by === $actor->id || $actor->isSuperAdministrator(), 403);
+            abort_unless(app(Tenancy::class)->sameAccount($actor, $audio) || $audio->uploaded_by === $actor->id || $actor->isSuperAdministrator(), 403);
             if ($audio->status !== 'rejected') {
                 app(Readiness::class)->fail('Only rejected audio can be submitted again.');
+            }
+            if (! $audio->checksum || ! Storage::disk('local')->exists($audio->storage_key ?? '') || ! hash_equals($audio->checksum, hash_file('sha256', Storage::disk('local')->path($audio->storage_key)))) {
+                app(Readiness::class)->fail('The recording is missing or changed. Upload a new WAV for review.');
             }
             $audio->update(['status' => 'pending', 'rejected_by' => null, 'rejected_at' => null, 'rejection_reason' => null]);
             app(Foundation::class)->audit($actor, 'audio.resubmitted', $audio);

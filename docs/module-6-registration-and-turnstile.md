@@ -1,18 +1,18 @@
 # Module 6 registration and authentication
 
-The supplied specification requires registration by email or phone, verification before password setup, future sign-in using a verified identifier, independent recovery/contact-change verification, abuse limits and suspension enforcement. These flows now use the Module 5 client account boundary.
+The supplied specification requires registration by email or phone, verification before password setup, subsequent password sign-in after verifying one contact, independent recovery/contact-change verification, abuse limits and suspension enforcement. These flows now use the Module 5 client account boundary.
 
 ## Available screens
 
 - `/register`: name, account name, country, broadcasting purpose, registration notice acceptance and the selected email/SMS identifier.
 - `/verify-contact`: six-digit OTP verification and controlled resend.
 - `/set-password`: password setup after successful verification, with matching confirmation and at least 12 characters including uppercase, lowercase, numbers and symbols.
-- `/login`: verified email or phone and password. Ordinary sign-in does not send an OTP.
+- `/login`: recorded email or phone and password after either contact has been verified. Ordinary sign-in does not send an OTP.
 - `/forgot-password`: independent OTP recovery using an eligible account contact.
 - `/account/security`: accessible from the client account menu. Requires the current password and a fresh OTP to add or replace a contact. The other contact's verification status is unchanged.
 - `/registration-notice`: describes data collected, verification, account boundaries and the accepted notice version. It is an onboarding notice; the operator's full service terms and retention policy remain separately maintained.
 
-An administrator-provisioned client with no verified contact completes a one-time verification after entering the correct existing password. This preserves Module 5 provisioning without treating an unverified optional secondary contact as a valid sign-in/recovery identifier.
+Registration requires verification of one selected contact. Once either contact is verified, the client can sign in using its recorded email or phone plus password without a new OTP or a dependency on email/SMS delivery. This does not mark the other contact verified: recovery and replacement still require verified-contact checks. An administrator-provisioned client with no verified contacts completes verification after a correct password before gaining access.
 
 ## Verification controls
 
@@ -87,3 +87,7 @@ Acceptance coverage includes email/SMS registration, password gating, OTP expiry
 ## Validation result
 
 On 25 October 2026, all 173 tests passed with 965 assertions, including 32 new identity and Turnstile tests. Blade compilation, Pint checks and diff whitespace checks passed. The local MariaDB migration completed successfully. SMTP and TxtConnect configuration presence was checked without exposing credentials; live delivery and a real Cloudflare widget were not exercised. Turnstile is currently disabled because its keys have not been supplied. Production was not changed.
+
+## Specification review additions
+
+The account-security screen now includes authenticated password changes and explicit sign-out of other sessions. Both require the current password and rotate the authentication version and remember token while retaining the initiating session. Recovery, activation and contact-change challenges are bound to that version, so a previously verified challenge cannot undo a later security change. Failed known-user sign-ins are audited; structured OTP abuse logs exclude raw contacts and secrets. See [Modules 6–9 review](modules-6-9-review.md) for deployment and validation.

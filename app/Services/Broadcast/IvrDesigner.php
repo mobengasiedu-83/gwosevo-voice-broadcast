@@ -104,17 +104,20 @@ class IvrDesigner
     public function save(User $actor, string $name, array $graph, ?IvrFlow $source = null): IvrFlow
     {
         Gate::forUser($actor)->authorize('campaigns.manage');
-        $assets = $this->validate($graph);
-        $tenant = app(Tenancy::class);
-        $tenant->assertAssets(new IvrFlow(['client_id' => $tenant->clientId($actor)]), array_column($assets['assets'], 'id'), AudioFile::class);
+        Validator::make(compact('name'), ['name' => 'required|string|max:255'])->validate();
 
         return DB::transaction(function () use ($actor, $name, $graph, $source) {
             app(Engine::class)->mutex();
+            $tenant = app(Tenancy::class);
             if ($source) {
-                abort_unless(app(Tenancy::class)->sameAccount($actor, $source) || $source->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
+                $source = IvrFlow::whereKey($source->id)->lockForUpdate()->firstOrFail();
+                abort_unless($tenant->sameAccount($actor, $source) || $source->owner_id === $actor->id || $actor->isSuperAdministrator(), 403);
             }
+            $clientId = $source ? $source->client_id : $tenant->clientId($actor);
+            $assets = $this->validate($graph);
+            $tenant->assertAssets(new IvrFlow(['client_id' => $clientId]), array_column($assets['assets'], 'id'), AudioFile::class);
             $family = $source?->family_uuid ?? (string) Str::uuid();
-            $flow = IvrFlow::create(['family_uuid' => $family, 'uuid' => (string) Str::uuid(), 'name' => $name, 'version' => (IvrFlow::where('family_uuid', $family)->max('version') ?? 0) + 1, 'owner_id' => $actor->id, 'graph' => $graph, 'checksum' => hash('sha256', json_encode($graph, JSON_THROW_ON_ERROR)), 'status' => 'draft']);
+            $flow = IvrFlow::create(['client_id' => $clientId, 'family_uuid' => $family, 'uuid' => (string) Str::uuid(), 'name' => $name, 'version' => (IvrFlow::where('family_uuid', $family)->max('version') ?? 0) + 1, 'owner_id' => $actor->id, 'graph' => $graph, 'checksum' => hash('sha256', json_encode($graph, JSON_THROW_ON_ERROR)), 'status' => 'draft']);
             app(Foundation::class)->audit($actor, 'ivr.created', $flow);
 
             return $flow;

@@ -6,6 +6,7 @@ use App\Models\CallAttempt;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
+use App\Models\Client;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -48,7 +49,7 @@ class CampaignPolicy
     {
         DB::transaction(function () {
             app(Engine::class)->mutex();
-            Campaign::where('status', 'scheduled')->where('scheduled_at', '<=', now())->where('stop_requested', false)->update(['status' => 'running']);
+            Campaign::where('status', 'scheduled')->whereNull('archived_at')->where(fn ($q) => $q->whereNull('client_id')->orWhereIn('client_id', Client::where('status', 'active')->select('id')))->where('scheduled_at', '<=', now())->where('stop_requested', false)->update(['status' => 'running']);
         });
     }
 }

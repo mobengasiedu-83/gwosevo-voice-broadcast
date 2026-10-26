@@ -1,6 +1,6 @@
 # Module 5 client accounts and isolation
 
-Implemented against the supplied 25 October 2026 development guide and client/admin specification. This module adds the account boundary to the existing application. Registration/OTP are now implemented in [Module 6](module-6-registration-and-turnstile.md). The full client administration UI and the dedicated client dashboard remain Modules 7 and 8.
+Implemented against the supplied 25 October 2026 development guide and client/admin specification. This module adds the account boundary to the existing application. Registration/OTP are now implemented in [Module 6](module-6-registration-and-turnstile.md). The client administration UI is implemented in [Module 7](module-7-client-administration.md); the dedicated client dashboard is implemented in [Module 8](module-8-client-dashboard.md).
 
 ## Account model
 
@@ -36,7 +36,7 @@ php artisan optimize:clear
 
 Restart the existing gateway and Horizon through your established deployment process so they load the updated code. The migration was exercised in isolated test databases and applied successfully to the local MariaDB database, preserving its pre-existing account and membership. It does not provision sample customer accounts or alter live calling configuration. Production deployment remains separate. Its rollback deliberately refuses automatic execution because merging per-account duplicate phone numbers into a global unique column requires a reviewed data migration.
 
-## Provisioning until the Module 7 UI exists
+## Command-line provisioning
 
 Use an authorized internal administrator's actual user ID for `--actor`. The command checks `clients.manage`; supplying an ID does not bypass authorization.
 
@@ -61,7 +61,7 @@ php artisan clients:manage status --actor=ADMIN_ID --client=CLIENT_ID --status=a
 php artisan clients:manage member --actor=ADMIN_ID --client=CLIENT_ID --user=USER_ID --status=revoked
 ```
 
-Client logins currently use the existing sign-in and account-scoped operational screens. No public signup, OTP flow or Clients navigation screen is introduced by Module 5.
+Client logins currently use the existing sign-in and account-scoped operational screens. Public signup and OTP are documented in Module 6; the Clients administration screen is documented in Module 7.
 
 ## Validation
 

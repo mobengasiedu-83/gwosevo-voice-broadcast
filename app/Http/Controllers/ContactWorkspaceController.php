@@ -94,7 +94,7 @@ class ContactWorkspaceController extends Controller
     public function membership(Request $r, ContactGroup $group, Foundation $audit)
     {
         $this->groupAccess($r, $group, true);
-        $d = $r->validate(['contact_id' => 'required|integer|exists:contacts,id', 'action' => 'required|in:add,remove']);
+        $d = $r->validate(['contact_id' => 'required|integer|min:1', 'action' => 'required|in:add,remove']);
         Contact::findOrFail($d['contact_id']);
         DB::transaction(function () use ($r, $group, $d, $audit) {
             $g = ContactGroup::whereKey($group->id)->lockForUpdate()->firstOrFail();
@@ -144,7 +144,7 @@ class ContactWorkspaceController extends Controller
     public function linkGroup(Request $r, Contact $contact, Foundation $audit)
     {
         Gate::authorize('contacts.manage');
-        $d = $r->validate(['group_id' => 'required|integer|exists:contact_groups,id']);
+        $d = $r->validate(['group_id' => 'required|integer|min:1']);
         $group = ContactGroup::findOrFail($d['group_id']);
         $this->groupAccess($r, $group, true);
         DB::transaction(function () use ($r, $contact, $group, $audit) {
@@ -222,7 +222,7 @@ class ContactWorkspaceController extends Controller
     public function upload(Request $r, ImportReader $reader, Imports $imports)
     {
         Gate::authorize('contacts.manage');
-        $d = $r->validate(['group_id' => 'required|integer|exists:contact_groups,id', 'file' => 'required|file|max:10240']);
+        $d = $r->validate(['group_id' => 'required|integer|min:1', 'file' => 'required|file|max:10240']);
         $g = ContactGroup::findOrFail($d['group_id']);
         $this->groupAccess($r, $g, true);
         [$headers,$rows] = $reader->read($r->file('file'));

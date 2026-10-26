@@ -163,7 +163,7 @@ Authenticated access uses role-based permissions and ownership checks. Seeded ro
 | Analyst | Campaign/report access |
 | Auditor | Audit and permitted read access |
 
-Super Administrator access does not bypass media integrity, verified capacity, DND, immutable run history or exact call-ownership checks. User provisioning is available through an interactive Artisan command; a complete graphical user-administration module is not supplied.
+Super Administrator access does not bypass media integrity, verified capacity, DND, immutable run history or exact call-ownership checks. User provisioning is available through an interactive Artisan command; client account and membership administration is available through the permission-scoped Clients workspace. Internal staff role administration remains command-line managed.
 
 ## Application architecture
 
@@ -313,3 +313,9 @@ For live acceptance, use an explicitly selected test recipient and verify ringin
 - [Initial discovery records](docs/discovery/phase-1.md)
 
 Phase documents retain historical implementation and acceptance notes. For current caller ID, optional-consent and audio-delivery behavior, use this README and the current workflow/audio guides.
+
+Client portal implementation: [Modules 6–9 specification review](docs/modules-6-9-review.md), [client administration](docs/module-7-client-administration.md), [client dashboard](docs/module-8-client-dashboard.md), and [client contacts/groups/imports](docs/module-9-client-contacts.md).
+
+[Module 10 client audio and internal approval](docs/module-10-client-audio.md) documents client recordings, review and shared-account resubmission.
+
+[Module 11 client campaigns, schedules and IVR](docs/module-11-client-campaigns.md) documents shared-account controls, frozen execution and the remaining wallet admission dependency.

@@ -1,0 +1,8 @@
+.client-account-compact{display:none}
+.client-portal .portal-heading{min-width:0}
+.client-portal .portal-heading>span{display:block;max-width:30vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.client-portal .top-tools{flex-shrink:0}
+.client-portal #sidebar .brand{white-space:normal;overflow-wrap:anywhere}
+.client-portal article+article{margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
+@media(max-width:800px){.client-account-full{display:none}.client-account-compact{display:inline}.client-portal .portal-heading>span{display:none}.client-portal .topbar{gap:8px;padding-inline:12px}.client-portal .top-tools{gap:10px}.client-portal .menu-toggle{margin-right:0}.client-portal .portal-heading>strong{font-size:12px}.client-portal .theme-toggle{padding-inline:8px}}
+@media(max-width:380px){.client-portal .portal-heading{display:none}.client-portal .top-tools{margin-left:auto}}

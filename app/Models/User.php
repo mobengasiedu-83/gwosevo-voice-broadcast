@@ -74,6 +74,8 @@ class User extends Authenticatable
             'phone_verified_at' => 'datetime',
             'terms_accepted_at' => 'datetime',
             'auth_version' => 'integer',
+            'portal_preferences' => 'array',
+            'notice_read_through_id' => 'integer',
             'password' => 'hashed',
         ];
     }

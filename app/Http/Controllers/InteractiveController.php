@@ -9,6 +9,7 @@ use App\Models\TrunkProfile;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\IvrCompiler;
 use App\Services\Broadcast\IvrDesigner;
+use App\Services\Broadcast\MediaDelivery;
 use App\Services\Broadcast\Readiness;
 use App\Services\Foundation;
 use Illuminate\Http\Request;
@@ -21,7 +22,7 @@ class InteractiveController extends Controller
     {
         abort_unless($request->user()->hasAnyPermission(['campaigns.manage', 'campaigns.approve', 'telephony.manage']), 403);
 
-        return view('broadcast.interactive', ['telephonyPage' => false, 'flows' => IvrFlow::whereNotNull('uuid')->latest()->paginate(20), 'audio' => AudioFile::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'routes' => TransferRoute::all(), 'trunks' => $request->user()->clientMembership()->exists() ? collect() : TrunkProfile::whereNotNull('name')->get()]);
+        return response()->view('broadcast.interactive', ['telephonyPage' => false, 'flows' => IvrFlow::whereNotNull('uuid')->latest()->paginate(20), 'audio' => AudioFile::where('status', 'approved')->when(! app(MediaDelivery::class)->remote(), fn ($q) => $q->whereNotNull('deployed_at'))->get(), 'routes' => TransferRoute::all(), 'trunks' => $request->user()->clientMembership()->exists() ? collect() : TrunkProfile::whereNotNull('name')->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function telephony()
@@ -71,7 +72,7 @@ class InteractiveController extends Controller
 
     public function save(Request $request, IvrDesigner $designer)
     {
-        $data = $request->validate(['name' => 'required|string|max:255', 'graph' => 'required|json|max:100000', 'source_id' => 'nullable|integer|exists:ivr_flows,id']);
+        $data = $request->validate(['name' => 'required|string|max:255', 'graph' => 'required|json|max:100000', 'source_id' => 'nullable|integer|min:1']);
         $graph = json_decode($data['graph'], true, 64, JSON_THROW_ON_ERROR);
         if (! is_array($graph)) {
             app(Readiness::class)->fail('Flow must be a JSON object.');

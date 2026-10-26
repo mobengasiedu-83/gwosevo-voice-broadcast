@@ -69,13 +69,16 @@ class Workspace
             if ($trunk) {
                 $config['trunk_id'] = $trunk->id;
             }
+            if (app(Tenancy::class)->clientId($u) !== null) {
+                unset($config['caller_id']);
+            }
             if (! empty($config['caller_id']) && ! preg_match('/\A\+?[0-9]{3,15}\z/', $config['caller_id'])) {
                 throw ValidationException::withMessages(['caller_id' => 'Enter 3–15 digits with an optional leading +.']);
             }
             $ids = array_values(array_unique(array_filter(array_map('trim', explode(',', $data['contact_ids'] ?? '')), fn ($v) => $v !== '')));
             $config['explicit_contact_ids'] = $ids;
             if (! empty($data['source_group_id'])) {
-                $group = ContactGroup::when(! $u->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $u->id))->where('active', true)->findOrFail($data['source_group_id']);
+                $group = ContactGroup::when(app(Tenancy::class)->clientId($u) === null && ! $u->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $u->id))->where('active', true)->findOrFail($data['source_group_id']);
                 $ids = array_values(array_unique(array_merge($ids, $group->contacts()->pluck('contacts.id')->map(fn ($id) => (string) $id)->all())));
             }
             Validator::make(['ids' => $ids], ['ids' => 'array|max:10000', 'ids.*' => 'integer|distinct|exists:contacts,id'])->validate();
@@ -126,7 +129,7 @@ class Workspace
             $c = Campaign::whereKey($c->id)->lockForUpdate()->firstOrFail();
             $config = $c->configuration ?? [];
             unset($config['scheduled_at']);
-            $new = Campaign::create(['name' => $name, 'purpose' => $c->purpose, 'type' => $c->type, 'timezone' => $c->timezone, 'owner_id' => $u->id, 'status' => 'draft', 'configuration' => $config, 'source_campaign_id' => $c->id, 'template_version_id' => $c->template_version_id]);
+            $new = Campaign::create(['client_id' => $c->client_id, 'name' => $name, 'purpose' => $c->purpose, 'type' => $c->type, 'timezone' => $c->timezone, 'owner_id' => $u->id, 'status' => 'draft', 'configuration' => $config, 'source_campaign_id' => $c->id, 'template_version_id' => $c->template_version_id]);
             app(Foundation::class)->audit($u, 'campaign.duplicated', $new, ['source_campaign_id' => $c->id]);
 
             return $new;
@@ -153,12 +156,13 @@ class Workspace
             app(Engine::class)->mutex();
             $c = Campaign::whereKey($c->id)->lockForUpdate()->firstOrFail();
             if ($parent) {
-                abort_unless($parent->owner_id === $u->id || $u->isSuperAdministrator(), 403);
+                abort_unless($parent->client_id === $c->client_id, 422, 'Template versions must belong to the same account.');
+                abort_unless(app(Tenancy::class)->sameAccount($u, $parent) || $parent->owner_id === $u->id || $u->isSuperAdministrator(), 403);
             }
             $config = $c->configuration ?? [];
             unset($config['contact_ids'],$config['explicit_contact_ids'],$config['scheduled_at'],$config['source_group_id']);
             $family = $parent?->family_uuid ?? (string) Str::uuid();
-            $t = CampaignTemplate::create(['family_uuid' => $family, 'version' => (CampaignTemplate::where('family_uuid', $family)->max('version') ?? 0) + 1, 'name' => $name, 'owner_id' => $u->id, 'blueprint' => ['purpose' => $c->purpose, 'type' => $c->type, 'timezone' => $c->timezone, 'configuration' => $config], 'created_at' => now()]);
+            $t = CampaignTemplate::create(['client_id' => $c->client_id, 'family_uuid' => $family, 'version' => (CampaignTemplate::where('family_uuid', $family)->max('version') ?? 0) + 1, 'name' => $name, 'owner_id' => $u->id, 'blueprint' => ['purpose' => $c->purpose, 'type' => $c->type, 'timezone' => $c->timezone, 'configuration' => $config], 'created_at' => now()]);
             app(Foundation::class)->audit($u, 'campaign.template_version_created', $t, ['source_campaign_id' => $c->id]);
 
             return $t;
@@ -172,7 +176,7 @@ class Workspace
 
         return DB::transaction(function () use ($u, $t, $name) {
             $b = $t->blueprint;
-            $c = Campaign::create(['name' => $name, 'purpose' => $b['purpose'], 'type' => $b['type'], 'timezone' => $b['timezone'], 'configuration' => $b['configuration'] + ['contact_ids' => []], 'status' => 'draft', 'owner_id' => $u->id, 'template_version_id' => $t->id]);
+            $c = Campaign::create(['client_id' => $t->client_id, 'name' => $name, 'purpose' => $b['purpose'], 'type' => $b['type'], 'timezone' => $b['timezone'], 'configuration' => $b['configuration'] + ['contact_ids' => []], 'status' => 'draft', 'owner_id' => $u->id, 'template_version_id' => $t->id]);
             app(Foundation::class)->audit($u, 'campaign.created_from_template', $c, ['template_version_id' => $t->id]);
 
             return $c;

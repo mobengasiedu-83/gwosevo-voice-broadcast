@@ -34,9 +34,14 @@ class BroadcastController extends Controller
     {
         abort_unless($request->user()->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']), 403);
 
-        return view('broadcast.audio-library', [
-            'audio' => AudioFile::whereNotNull('uuid')->when($request->validate(['status' => 'nullable|in:pending,approved,rejected'])['status'] ?? null, fn ($q, $status) => $q->where('status', $status))->latest()->paginate(25)->withQueryString(),
-        ]);
+        $filters = $request->validate(['status' => 'nullable|in:pending,approved,rejected', 'q' => 'nullable|string|max:100']);
+        $query = AudioFile::whereNotNull('uuid');
+        $counts = (clone $query)->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status');
+        $audio = $query->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+            ->when($filters['q'] ?? null, fn ($q, $term) => $q->where('name', 'like', '%'.addcslashes($term, '%_\\').'%'))
+            ->latest('id')->paginate(25)->withQueryString();
+
+        return response()->view('broadcast.audio-library', compact('audio', 'filters', 'counts'))->header('Cache-Control', 'private, no-store');
     }
 
     public function configure(Request $request, Campaign $campaign, Engine $engine)
@@ -79,7 +84,7 @@ class BroadcastController extends Controller
 
     public function upload(Request $request, AudioLibrary $library)
     {
-        $data = $request->validate(['name' => 'required|string|max:255', 'audio' => 'required|file|max:9765']);
+        $data = $request->validate(['name' => 'required|string|max:255', 'audio' => 'required|file|max:'.(int) ceil(config('voice_broadcast.max_audio_bytes') / 1024)]);
         $library->upload($request->user(), $request->file('audio'), $data['name']);
 
         return back()->with('status', 'Audio validated and stored for review.');

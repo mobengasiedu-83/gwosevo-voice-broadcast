@@ -7,9 +7,11 @@ use App\Models\ClientMembership;
 use App\Models\User;
 use App\Services\Broadcast\Engine;
 use App\Services\Foundation;
+use App\Services\Identity\Challenges;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
 
 class Accounts
 {
@@ -42,7 +44,21 @@ class Accounts
     public function profile(User $actor, Client $client, array $data): void
     {
         Gate::forUser($actor)->authorize('clients.manage');
+        $this->writeProfile($actor, $client, $data);
+    }
+
+    public function ownProfile(User $actor, array $data): void
+    {
+        $tenancy = app(Tenancy::class);
+        $membership = $tenancy->membership($actor);
+        abort_unless($membership && $tenancy->usable($actor), 403);
+        $this->writeProfile($actor, $membership->client, $data);
+    }
+
+    private function writeProfile(User $actor, Client $client, array $data): void
+    {
         $validated = Validator::make($data, [
+            'account_type' => 'nullable|in:individual,business', 'business_name' => 'nullable|string|max:255',
             'name' => 'required|string|max:255', 'contact_name' => 'nullable|string|max:255',
             'contact_email' => 'nullable|email|max:254', 'contact_phone' => 'nullable|string|max:40',
             'country' => 'nullable|string|max:80', 'address' => 'nullable|string|max:1000',
@@ -60,18 +76,20 @@ class Accounts
     {
         Gate::forUser($actor)->authorize('clients.manage');
         $data['email'] = empty($data['email']) ? null : mb_strtolower(trim($data['email']));
-        $data['phone_e164'] = empty($data['phone']) ? null : app(\App\Services\Identity\Challenges::class)->normalize('sms', $data['phone']);
+        $data['phone_e164'] = empty($data['phone']) ? null : app(Challenges::class)->normalize('sms', $data['phone']);
         $validated = Validator::make($data, [
             'name' => 'required|string|max:255', 'email' => 'nullable|required_without:phone_e164|email|max:254|unique:users,email',
             'phone_e164' => 'nullable|required_without:email|string|max:16|unique:users,phone_e164',
-            'password' => ['required', 'confirmed', 'max:128', \Illuminate\Validation\Rules\Password::min(12)->mixedCase()->numbers()->symbols()],
+            'password' => ['required', 'confirmed', 'max:128', Password::min(12)->mixedCase()->numbers()->symbols()],
             'role' => 'required|in:owner,member',
         ])->validate();
+
         return DB::transaction(function () use ($actor, $client, $validated) {
             $user = new User;
             $user->forceFill(collect($validated)->only(['name', 'email', 'phone_e164', 'password'])->all())->save();
             $this->member($actor, $client, $user, $validated['role'], 'active', 'Created by authorized administrator');
             app(Foundation::class)->audit($actor, 'client.user_created', $client, ['user_id' => $user->id, 'role' => $validated['role']]);
+
             return $user;
         });
     }

@@ -94,6 +94,10 @@ class Engine
                     $this->ready->fail('A complete campaign configuration is required before launch.');
                 }
                 $this->ready->liveAssets($s);
+                $eligible = collect($s['targets'])->contains(fn ($target) => $this->ready->exclusion($target['id'], $target['phone_e164'], $s['purpose']) === null);
+                if (! $eligible) {
+                    $this->ready->fail('No eligible contacts. Review DND/suppression and the frozen audience before launch.');
+                }
                 CampaignRun::firstOrCreate(['campaign_id' => $campaign->id], ['uuid' => (string) Str::uuid(), 'campaign_version_id' => $version->id, 'started_by' => $actor->id, 'snapshot' => $version->snapshot, 'created_at' => now()]);
                 foreach ($s['targets'] as $target) {
                     CampaignRecipient::firstOrCreate(['campaign_id' => $campaign->id, 'contact_id' => $target['id']], ['phone_e164' => $target['phone_e164'], 'status' => 'pending']);
@@ -111,6 +115,12 @@ class Engine
                 if ($campaign->status !== 'paused' || $campaign->stop_requested) {
                     $this->ready->fail('This campaign cannot resume.');
                 }
+                $version = CampaignVersion::where('campaign_id', $campaign->id)->whereKey($campaign->active_version_id)->first();
+                $snapshot = $version?->snapshot['broadcast'] ?? null;
+                if (! $snapshot) {
+                    $this->ready->fail('A valid immutable launch snapshot is required before resuming.');
+                }
+                $this->ready->liveAssets($snapshot);
                 $campaign->status = $campaign->scheduled_at && $campaign->scheduled_at->isFuture() ? 'scheduled' : 'running';
             } else {
                 if (! in_array($campaign->status, ['running', 'paused', 'scheduled'], true)) {

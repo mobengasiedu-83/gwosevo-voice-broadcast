@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CallAttempt;
 use App\Models\CampaignRecipient;
 use App\Services\Broadcast\Engine;
+use App\Services\Clients\Tenancy;
 use App\Services\Dashboard\Health;
 use App\Services\Dashboard\Metrics;
 use App\Services\Dashboard\Scope;
@@ -18,6 +19,9 @@ class DashboardController extends Controller
     public function show(Request $request, Scope $scope, Metrics $metrics, Health $health)
     {
         $tab = $request->route('tab') ?? 'overview';
+        if ($tab === 'overview' && app(Tenancy::class)->membership($request->user())) {
+            return app(ClientDashboardController::class)($request, app(Tenancy::class), $scope, $metrics);
+        }
         Gate::authorize('dashboard.view');
         if ($tab !== 'overview') {
             Gate::authorize('dashboard.'.$tab);
@@ -52,6 +56,11 @@ class DashboardController extends Controller
 
     private function alerts(array $data, Request $request): array
     {
+        if (app(Tenancy::class)->membership($request->user())) {
+            return ($data['uncertain'] ?? 0) > 0
+                ? [['level' => 'warning', 'title' => 'Call outcomes await confirmation', 'detail' => 'Review campaign reports before retrying.']]
+                : [];
+        }
         $alerts = [];
         if (! $data['gateway']['enabled']) {
             $alerts[] = ['level' => 'notice', 'title' => 'Live dispatch is disabled', 'detail' => 'Campaign configuration remains available. Enable dispatch only after capacity and PBX acceptance.'];

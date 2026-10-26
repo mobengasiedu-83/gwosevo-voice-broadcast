@@ -112,12 +112,14 @@ class Imports
             $u = User::findOrFail($b->owner_id);
             if (! app(Tenancy::class)->usable($u) || (app(Tenancy::class)->clientId($u) !== null && app(Tenancy::class)->clientId($u) !== $b->client_id)) {
                 $b->update(['status' => 'blocked']);
+                app(Foundation::class)->audit($u, 'contacts.import_blocked', $b);
 
                 return;
             }
             $group = ContactGroup::whereKey($b->contact_group_id)->lockForUpdate()->firstOrFail();
             if (! $u->can('contacts.manage') || ($group->owner_id !== $u->id && ! $u->isSuperAdministrator() && $group->client_id === null) || $group->client_id !== $b->client_id || ! $group->active) {
                 $b->update(['status' => 'blocked']);
+                app(Foundation::class)->audit($u, 'contacts.import_blocked', $b);
 
                 return;
             }

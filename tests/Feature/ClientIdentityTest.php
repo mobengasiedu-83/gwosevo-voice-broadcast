@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 class ClientIdentityTest extends TestCase
@@ -182,12 +183,15 @@ class ClientIdentityTest extends TestCase
         Mail::assertNothingSent();
     }
 
-    public function test_unverified_phone_and_suspended_accounts_cannot_sign_in(): void
+    public function test_email_verified_client_can_use_its_recorded_phone_but_suspended_accounts_are_denied(): void
     {
         $user = $this->verifiedClient();
         $user->forceFill(['phone_e164' => '+233241234567', 'phone_verified_at' => null])->save();
-        $this->post('/login', ['identifier' => '0241234567', 'password' => $this->password])->assertSessionHasErrors('email');
-        $this->assertGuest();
+        $this->post('/login', ['identifier' => '0241234567', 'password' => $this->password])->assertRedirect('/dashboard');
+        $this->assertAuthenticatedAs($user);
+        $this->assertNull($user->fresh()->phone_verified_at);
+        Http::assertNothingSent();
+        $this->post('/logout');
         $user->clientMembership->client->update(['status' => 'suspended']);
         $this->post('/login', ['identifier' => $user->email, 'password' => $this->password])->assertSessionHasErrors('email');
         $this->assertGuest();
@@ -322,5 +326,34 @@ class ClientIdentityTest extends TestCase
         $this->assertAuthenticatedAs($user);
         $this->assertNotNull($user->fresh()->email_verified_at);
         $this->assertDatabaseCount('clients', 1);
+    }
+
+    public function test_phone_verified_client_can_sign_in_with_recorded_email_without_delivery_or_marking_it_verified(): void
+    {
+        $user = $this->verifiedClient();
+        $user->forceFill(['email_verified_at' => null, 'phone_e164' => '+233241234567', 'phone_verified_at' => now()])->save();
+        $this->post('/login', ['identifier' => $user->email, 'password' => 'wrong'])->assertSessionHasErrors('email');
+        Mail::assertNothingSent();
+        $this->post('/login', ['identifier' => $user->email, 'password' => $this->password])->assertRedirect('/dashboard');
+        $this->assertAuthenticatedAs($user);
+        $this->assertNull($user->fresh()->email_verified_at);
+        $this->assertNotNull($user->fresh()->phone_verified_at);
+        Mail::assertNothingSent();
+        Http::assertNothingSent();
+        $this->post('/logout')->assertRedirect('/login');
+        $this->post('/forgot-password', ['channel' => 'email', 'identifier' => $user->email])->assertRedirect('/verify-contact');
+        Mail::assertNothingSent();
+    }
+
+    public function test_login_and_logout_preserve_the_application_subdirectory(): void
+    {
+        $user = $this->verifiedClient();
+        URL::forceRootUrl('http://localhost/gwosevo-voice-broadcast/public');
+        try {
+            $this->post('http://localhost/login', ['identifier' => $user->email, 'password' => $this->password])->assertRedirect('http://localhost/gwosevo-voice-broadcast/public/dashboard');
+            $this->post('http://localhost/logout')->assertRedirect('http://localhost/gwosevo-voice-broadcast/public/login');
+        } finally {
+            URL::forceRootUrl(null);
+        }
     }
 }

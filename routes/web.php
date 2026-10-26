@@ -3,6 +3,9 @@
 
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\CampaignController;
+use App\Http\Controllers\ClientAccountController;
+use App\Http\Controllers\ClientAdminController;
+use App\Http\Controllers\ClientNoticeController;
 use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FoundationController;
@@ -386,3 +389,25 @@ Route::middleware('auth')
         Route::post('/{contact}/link-group', [$c, 'linkGroup'])
             ->name('link_group');
     });
+
+Route::middleware('auth')->prefix('clients')->name('clients.')->group(function () {
+    $c = ClientAdminController::class;
+    Route::get('/', [$c, 'index'])->name('index');
+    Route::post('/', [$c, 'store'])->name('store');
+    Route::get('/{client}', [$c, 'show'])->whereNumber('client')->name('show');
+    Route::post('/{client}/profile', [$c, 'profile'])->name('profile');
+    Route::post('/{client}/status', [$c, 'status'])->name('status');
+    Route::post('/{client}/users', [$c, 'createUser'])->name('users.store');
+    Route::post('/{client}/assign', [$c, 'assign'])->name('assign');
+    Route::post('/{client}/memberships/{membership}', [$c, 'membership'])->name('membership');
+});
+
+Route::middleware('auth')->prefix('account')->name('account.')->group(function () {
+    $account = ClientAccountController::class;
+    Route::get('/profile', [$account, 'profile'])->name('profile');
+    Route::post('/profile', [$account, 'saveProfile'])->name('profile.save');
+    Route::post('/preferences', [$account, 'preferences'])->name('preferences');
+    Route::post('/security', [$account, 'security'])->middleware(['throttle:5,1', VerifyTurnstile::class.':identity'])->name('security.save');
+    Route::get('/notifications', [ClientNoticeController::class, 'index'])->name('notifications');
+    Route::post('/notifications/read', [ClientNoticeController::class, 'read'])->name('notifications.read');
+});

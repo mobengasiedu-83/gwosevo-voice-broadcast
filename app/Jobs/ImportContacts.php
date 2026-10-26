@@ -3,9 +3,13 @@
 namespace App\Jobs;
 
 use App\Models\ContactImport;
+use App\Models\User;
+use App\Services\Clients\Tenancy;
 use App\Services\Contacts\Imports;
+use App\Services\Foundation;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\DB;
 
 class ImportContacts implements ShouldQueue
 {
@@ -34,6 +38,18 @@ class ImportContacts implements ShouldQueue
 
     public function failed(?\Throwable $e): void
     {
-        ContactImport::withoutGlobalScopes()->whereKey($this->batchId)->whereIn('status', ['queued', 'processing'])->update(['status' => 'failed']);
+        DB::transaction(function () {
+            $batch = ContactImport::withoutGlobalScopes()->whereKey($this->batchId)->lockForUpdate()->first();
+            if (! $batch || $batch->client_id !== $this->clientId || ! in_array($batch->status, ['queued', 'processing'])) {
+                return;
+            }
+            app(Tenancy::class)->run($batch->client_id, function () use ($batch) {
+                $batch->update(['status' => 'failed']);
+                $actor = User::find($batch->owner_id);
+                if ($actor) {
+                    app(Foundation::class)->audit($actor, 'contacts.import_failed', $batch);
+                }
+            });
+        });
     }
 }

@@ -58,6 +58,10 @@ class CampaignController extends Controller
 
     private function data(Request $r): array
     {
+        if (app(Tenancy::class)->clientId($r->user()) !== null) {
+            $r->merge(['caller_id' => null]);
+        }
+
         return $r->validate(['name' => 'required|string|max:255', 'purpose' => 'required|string|max:255', 'type' => 'required|in:one_way,interactive', 'dialing_strategy' => 'required|in:direct', 'timezone' => 'required|timezone', 'audio_id' => 'nullable|integer|exists:audio_files,id', 'caller_id' => 'nullable|regex:/\A\+?[0-9]{3,15}\z/', 'ivr_flow_id' => 'nullable|integer|exists:ivr_flows,id', 'source_group_id' => 'nullable|integer|exists:contact_groups,id', 'contact_ids' => 'nullable|string|max:100000', 'scheduled_at' => 'nullable|date', 'window_start' => 'required|date_format:H:i', 'window_end' => 'required|date_format:H:i|after:window_start', 'concurrency' => 'required|integer|min:1|max:100', 'cps' => 'required|numeric|gt:0|max:100', 'max_attempts' => 'required|integer|min:1|max:5', 'retry_delay_seconds' => 'required|integer|min:60|max:86400', 'priority' => 'required|integer|min:1|max:10']);
     }
 
@@ -69,7 +73,7 @@ class CampaignController extends Controller
             abort_if($campaign->archived_at || ! in_array($campaign->status, ['draft', 'ready'], true), 422, 'Only draft or ready campaigns can be edited. Duplicate a completed campaign for a new run.');
         }
 
-        return view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $r->user()->clientMembership()->exists() ? null : $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get()]);
+        return response()->view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $r->user()->clientMembership()->exists() ? null : $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function save(Request $r, Workspace $w, ?Campaign $campaign = null)
@@ -145,9 +149,9 @@ class CampaignController extends Controller
         DB::transaction(function () use ($r, $campaign, $e, $d) {
             $e->mutex();
             $locked = Campaign::whereKey($campaign->id)->lockForUpdate()->firstOrFail();
-            $mayOperate = $r->user()->can('broadcast.operate') || ($locked->owner_id === $r->user()->id && $r->user()->can('campaigns.manage'));
+            $mayOperate = $r->user()->can('broadcast.operate') || ((app(Tenancy::class)->sameAccount($r->user(), $locked) || $locked->owner_id === $r->user()->id) && $r->user()->can('campaigns.manage'));
             if ($d['action'] === 'cancel' && in_array($locked->status, ['draft', 'ready', 'approved'])) {
-                abort_unless($r->user()->can('broadcast.emergency') || ($locked->owner_id === $r->user()->id && $r->user()->can('campaigns.manage')), 403);
+                abort_unless($r->user()->can('broadcast.emergency') || ((app(Tenancy::class)->sameAccount($r->user(), $locked) || $locked->owner_id === $r->user()->id) && $r->user()->can('campaigns.manage')), 403);
                 $locked->update(['status' => 'cancelled', 'stop_requested' => true]);
             } else {
                 abort_unless($d['action'] === 'cancel' || $mayOperate, 403);
@@ -163,7 +167,7 @@ class CampaignController extends Controller
     {
         Gate::authorize('campaigns.view');
 
-        return view('campaigns.templates', ['templates' => $w->templates($r->user())->latest('id')->paginate(25)]);
+        return response()->view('campaigns.templates', ['templates' => $w->templates($r->user())->latest('id')->paginate(25)])->header('Cache-Control', 'private, no-store');
     }
 
     public function template(Request $r, Campaign $campaign, Workspace $w)

@@ -170,7 +170,7 @@ class IdentityController extends Controller
     {
         abort_unless($request->user()->clientMembership()->exists(), 403);
 
-        return view('auth.security');
+        return response()->view('auth.security')->header('Cache-Control', 'private, no-store');
     }
 
     public function changeContact(Request $request, Challenges $challenges)

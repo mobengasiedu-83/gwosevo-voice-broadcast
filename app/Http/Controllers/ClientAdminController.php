@@ -2,7 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AuditLog, Campaign, Client, ClientMembership, ContactImport, User};
+use App\Models\AuditLog;
+use App\Models\Campaign;
+use App\Models\Client;
+use App\Models\ClientMembership;
+use App\Models\ContactImport;
+use App\Models\User;
 use App\Services\Clients\Accounts;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +20,7 @@ class ClientAdminController extends Controller
     private function client(int $id): Client
     {
         Gate::authorize('clients.manage');
+
         return Client::findOrFail($id);
     }
 
@@ -27,13 +33,23 @@ class ClientAdminController extends Controller
             $term = '%'.addcslashes($filters['q'], '%_\\').'%';
             $query->where(fn ($q) => $q->where('name', 'like', $term)->orWhere('uuid', 'like', $term)->orWhereHas('memberships.user', fn ($u) => $u->where('name', 'like', $term)->orWhere('email', 'like', $term)->orWhere('phone_e164', 'like', $term)));
         }
-        if (! empty($filters['status'])) { $query->where('status', $filters['status']); }
-        if (! empty($filters['from'])) { $query->whereDate('created_at', '>=', $filters['from']); }
-        if (! empty($filters['to'])) { $query->whereDate('created_at', '<=', $filters['to']); }
-        if (($filters['sort'] ?? '') === 'name') { $query->orderBy('name')->orderBy('id'); }
-        else { $query->orderBy('id', ($filters['sort'] ?? '') === 'oldest' ? 'asc' : 'desc'); }
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+        if (! empty($filters['from'])) {
+            $query->whereDate('created_at', '>=', $filters['from']);
+        }
+        if (! empty($filters['to'])) {
+            $query->whereDate('created_at', '<=', $filters['to']);
+        }
+        if (($filters['sort'] ?? '') === 'name') {
+            $query->orderBy('name')->orderBy('id');
+        } else {
+            $query->orderBy('id', ($filters['sort'] ?? '') === 'oldest' ? 'asc' : 'desc');
+        }
         $clients = $query->withCount(['memberships', 'campaigns', 'contacts'])->paginate(20)->withQueryString();
         $counts = Client::selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status');
+
         return response()->view('clients.index', compact('clients', 'filters', 'counts'))->header('Cache-Control', 'private, no-store');
     }
 
@@ -42,6 +58,7 @@ class ClientAdminController extends Controller
         Gate::authorize('clients.manage');
         $data = $request->validate(['name' => 'required|string|max:255']);
         $client = $accounts->create($request->user(), $data['name']);
+
         return redirect()->route('clients.show', [$client->id, 'tab' => 'profile'])->with('status', 'Client created as pending. Add its profile and users, then activate when ready.');
     }
 
@@ -63,17 +80,22 @@ class ClientAdminController extends Controller
             $usage = DB::table('call_attempts as a')->join('campaign_recipients as r', 'r.id', '=', 'a.campaign_recipient_id')->join('campaigns as c', 'c.id', '=', 'r.campaign_id')->where('c.client_id', $client->id)->selectRaw('COUNT(*) as attempts, SUM(CASE WHEN a.sent_at IS NOT NULL THEN 1 ELSE 0 END) as sent, SUM(CASE WHEN a.answered_at IS NOT NULL THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN a.playback_completed_at IS NOT NULL THEN 1 ELSE 0 END) as played')->first();
             $imports = ContactImport::where('client_id', $client->id)->latest('id')->paginate(10, ['*'], 'imports_page')->withQueryString();
             $query = AuditLog::where('client_id', $client->id);
-            if (($filters['activity'] ?? '') === 'logins') { $query->whereIn('action', ['identity.signed_in', 'identity.contact_verified', 'client.registered']); }
-            elseif (($filters['activity'] ?? '') === 'account') { $query->where('action', 'like', 'client.%'); }
+            if (($filters['activity'] ?? '') === 'logins') {
+                $query->whereIn('action', ['identity.signed_in', 'identity.signin_failed', 'identity.signin_locked', 'identity.contact_verified', 'identity.sessions_revoked', 'identity.password_changed', 'identity.password_reset', 'client.registered']);
+            } elseif (($filters['activity'] ?? '') === 'account') {
+                $query->where('action', 'like', 'client.%');
+            }
             $audits = $query->latest('id')->paginate(20, ['*'], 'audit_page')->withQueryString();
         }
+
         return response()->view('clients.show', compact('client', 'filters', 'tab', 'memberships', 'campaigns', 'imports', 'audits', 'usage'))->header('Cache-Control', 'private, no-store');
     }
 
     public function profile(Request $request, int $client, Accounts $accounts)
     {
         $client = $this->client($client);
-        $accounts->profile($request->user(), $client, $request->only(['name', 'contact_name', 'contact_email', 'contact_phone', 'country', 'address', 'broadcasting_purpose']));
+        $accounts->profile($request->user(), $client, $request->only(['name', 'contact_name', 'contact_email', 'contact_phone', 'country', 'address', 'broadcasting_purpose', 'account_type', 'business_name']));
+
         return back()->with('status', 'Client profile updated. Sign-in contacts and verification remain managed through account security.');
     }
 
@@ -82,6 +104,7 @@ class ClientAdminController extends Controller
         $client = $this->client($client);
         $data = $request->validate(['status' => 'required|in:pending,active,suspended,closed', 'reason' => 'required|string|max:2000']);
         $accounts->status($request->user(), $client, $data['status'], $data['reason']);
+
         return back()->with('status', 'Client status updated. Existing launch and access checks enforce this status.');
     }
 
@@ -89,6 +112,7 @@ class ClientAdminController extends Controller
     {
         $client = $this->client($client);
         $accounts->createUser($request->user(), $client, $request->only(['name', 'email', 'phone', 'password', 'password_confirmation', 'role']));
+
         return back()->with('status', 'Client user created. Share the temporary password securely; first sign-in requires contact verification. No notification was sent.');
     }
 
@@ -97,8 +121,11 @@ class ClientAdminController extends Controller
         $client = $this->client($client);
         $data = $request->validate(['email' => 'required|email|max:254', 'role' => 'required|in:owner,member', 'reason' => 'required|string|max:2000']);
         $user = User::whereRaw('LOWER(email) = ?', [mb_strtolower(trim($data['email']))])->first();
-        if (! $user) { throw ValidationException::withMessages(['email' => 'No matching login. Create a client user instead.']); }
+        if (! $user) {
+            throw ValidationException::withMessages(['email' => 'No matching login. Create a client user instead.']);
+        }
         $accounts->member($request->user(), $client, $user, $data['role'], 'active', $data['reason']);
+
         return back()->with('status', 'User assigned to this account.');
     }
 
@@ -108,6 +135,7 @@ class ClientAdminController extends Controller
         $membership = ClientMembership::where('client_id', $client->id)->findOrFail($membership);
         $data = $request->validate(['role' => 'required|in:owner,member', 'status' => 'required|in:active,revoked', 'reason' => 'required|string|max:2000']);
         $accounts->member($request->user(), $client, $membership->user, $data['role'], $data['status'], $data['reason']);
+
         return back()->with('status', 'Client membership updated.');
     }
 }
