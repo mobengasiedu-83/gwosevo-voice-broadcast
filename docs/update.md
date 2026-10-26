@@ -57,4 +57,6 @@ sudo chmod -R u+rwX,go-rwx storage bootstrap/cache
 
 review module 7 and apply any missing features and functions.
 review module 10 and apply any missing features and functions.
-review module 1 and apply any missing features and functions.
+review module 11 and apply any missing features and functions.
+review module 12 and apply any missing features and functions.
+review module 13 and apply any missing features and functions.

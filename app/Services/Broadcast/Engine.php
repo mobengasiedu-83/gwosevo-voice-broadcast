@@ -10,6 +10,8 @@ use App\Models\CampaignRun;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Models\User;
+use App\Services\Billing\Rating;
+use App\Services\Billing\Tariffs;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
@@ -182,7 +184,7 @@ class Engine
                     continue;
                 }
                 $uuid = (string) Str::uuid();
-                $attempt = CallAttempt::create(['uuid' => $uuid, 'action_id' => 'vb-'.$uuid, 'uniqueid' => $uuid, 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $campaign->active_version_id, 'trunk_profile_id' => $trunk->id, 'token' => bin2hex(random_bytes(32)), 'state' => 'authorizing', 'attempt_no' => (CallAttempt::where('campaign_recipient_id', $recipient->id)->max('attempt_no') ?? 0) + 1]);
+                $attempt = CallAttempt::create(['tariff_snapshot' => app(Tariffs::class)->snapshot($campaign->client_id), 'uuid' => $uuid, 'action_id' => 'vb-'.$uuid, 'uniqueid' => $uuid, 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $campaign->active_version_id, 'trunk_profile_id' => $trunk->id, 'token' => bin2hex(random_bytes(32)), 'state' => 'authorizing', 'attempt_no' => (CallAttempt::where('campaign_recipient_id', $recipient->id)->max('attempt_no') ?? 0) + 1]);
                 DB::table('channel_reservations')->insert(['call_attempt_id' => $attempt->id, 'campaign_id' => $campaign->id, 'trunk_profile_id' => $trunk->id, 'acquired_at' => now()]);
                 $recipient->update(['status' => 'reserved']);
                 $campaign->update(['last_dispatched_at' => now()->format('Y-m-d H:i:s.u'), 'dispatch_score' => $campaign->dispatch_score + 1 / max(1, $campaign->priority)]);
@@ -207,7 +209,13 @@ class Engine
         if ($attempt->ended_at) {
             return;
         }
+        $unsent = ! $attempt->sent_at && in_array($attempt->state, ['authorizing', 'ready'], true);
         $attempt->update(['state' => 'terminal', 'outcome' => $outcome, 'ended_at' => now()]);
+        if ($attempt->sent_at) {
+            app(Rating::class)->issue($attempt, 'timing_required');
+        } elseif ($unsent) {
+            app(Rating::class)->unsent($attempt);
+        }
         DB::table('channel_reservations')->where('call_attempt_id', $attempt->id)->whereNull('released_at')->update(['released_at' => now()]);
         $recipient = CampaignRecipient::findOrFail($attempt->campaign_recipient_id);
         if (! app(CampaignPolicy::class)->retry($attempt, $outcome)) {

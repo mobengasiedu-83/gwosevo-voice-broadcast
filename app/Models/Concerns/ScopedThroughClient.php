@@ -21,7 +21,7 @@ trait ScopedThroughClient
                 'ContactConsent' => [Contact::class, 'contact_id'],
                 'CampaignVersion', 'CampaignRun', 'CampaignRecipient' => [Campaign::class, 'campaign_id'],
                 'CallAttempt' => [CampaignRecipient::class, 'campaign_recipient_id'],
-                'CallEvent', 'DtmfResponse' => [CallAttempt::class, 'call_attempt_id'],
+                'CallEvent', 'DtmfResponse', 'CallTimingEvidence', 'CallRating', 'BillingException' => [CallAttempt::class, 'call_attempt_id'],
             };
             $query->whereIn($query->getModel()->qualifyColumn($foreign), $model::select('id'));
         });

@@ -319,3 +319,5 @@ Client portal implementation: [Modules 6–9 specification review](docs/modules-
 [Module 10 client audio and internal approval](docs/module-10-client-audio.md) documents client recordings, review and shared-account resubmission.
 
 [Module 11 client campaigns, schedules and IVR](docs/module-11-client-campaigns.md) documents shared-account controls, frozen execution and the remaining wallet admission dependency.
+
+[Module 12 call reconciliation and minute rating](docs/module-12-call-rating.md) covers trusted precise timing, immutable tariff snapshots, per-attempt ratings and exception holds. Wallet settlement remains Module 13.

@@ -8,6 +8,7 @@ use App\Models\CallEvent;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
+use App\Services\Billing\Rating;
 use App\Services\Contacts\Suppression;
 use Illuminate\Support\Facades\DB;
 
@@ -148,6 +149,7 @@ class EventProcessor
                 }
                 // If a leg existed, wait for its Hangup or reconcile rather than guessing it ended.
             }
+            app(Rating::class)->observe($a);
             // AMI Response: Success means accepted, never answered or completed.
             $event->update(['processed_at' => now()]);
         });

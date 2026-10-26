@@ -11,7 +11,9 @@ use App\Models\ContactGroup;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Models\User;
+use App\Services\Billing\Tariffs;
 use App\Services\Broadcast\CampaignPolicy;
+use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\IvrDesigner;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\Accounts;
@@ -19,6 +21,7 @@ use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -188,5 +191,25 @@ class ClientCampaignModuleTest extends TestCase
         $this->post('/campaigns/'.$campaign->id.'/control', ['action' => 'resume', 'reason' => 'Unsafe resume'])->assertSessionHasErrors('broadcast');
         $this->assertSame('paused', $campaign->fresh()->status);
         $this->assertSame(1, CampaignRun::where('campaign_id', $campaign->id)->count());
+    }
+
+    public function test_real_admission_captures_the_assigned_tariff_before_any_originate(): void
+    {
+        $tariffs = app(Tariffs::class);
+        $tariff = $tariffs->create($this->admin, ['code' => 'admission-test', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2, 'rate_minor_per_minute' => 30, 'playback_policy' => 'hold_on_failure'], 'Test-only price');
+        $tariffs->assign($this->admin, $this->client, $tariff, 'Test assignment');
+        $campaign = $this->campaign();
+        $engine = app(Engine::class);
+        $engine->control($this->owner, $campaign, 'start');
+        config()->set('voice_broadcast.enabled', true);
+        config()->set('voice_broadcast.global_channels', 3);
+        config()->set('voice_broadcast.global_cps', 1);
+        $gateway = (string) Str::uuid();
+        DB::table('broadcast_gateway')->where('id', 1)->update(['owner' => $gateway, 'healthy' => true, 'snapshot_at' => now(), 'heartbeat_at' => now(), 'channels' => '[]', 'emergency_stop' => false]);
+        $attempt = DB::transaction(fn () => $engine->reserve($gateway));
+        $this->assertNotNull($attempt);
+        $this->assertSame($tariff->id, $attempt->tariff_snapshot['id']);
+        $this->assertSame('ceil_minute_v1', $attempt->tariff_snapshot['policy_version']);
+        $this->assertNull($attempt->sent_at);
     }
 }

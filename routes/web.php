@@ -2,6 +2,7 @@
 <?php
 
 use App\Http\Controllers\BroadcastController;
+use App\Http\Controllers\CallRatingController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ClientAccountController;
 use App\Http\Controllers\ClientAdminController;
@@ -411,3 +412,5 @@ Route::middleware('auth')->prefix('account')->name('account.')->group(function (
     Route::get('/notifications', [ClientNoticeController::class, 'index'])->name('notifications');
     Route::post('/notifications/read', [ClientNoticeController::class, 'read'])->name('notifications.read');
 });
+
+Route::get('/billing/reconciliation', [CallRatingController::class, 'index'])->middleware('auth')->name('billing.exceptions');

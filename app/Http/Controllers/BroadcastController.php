@@ -172,18 +172,18 @@ class BroadcastController extends Controller
         $user = $request->user();
         abort_unless($user->hasAnyPermission(['reports.view', 'broadcast.operate', 'audit.view', 'campaigns.approve']) || ($user->can('campaigns.view') && $campaign->owner_id === $user->id), 403);
         $ids = CampaignRecipient::where('campaign_id', $campaign->id)->pluck('id');
-        $query = CallAttempt::whereIn('campaign_recipient_id', $ids);
+        $query = CallAttempt::with(['rating', 'timingEvidence', 'billingExceptions' => fn ($q) => $q->whereNull('resolved_at')])->whereIn('campaign_recipient_id', $ids);
         $counts = (clone $query)->selectRaw('outcome, count(*) as total')->groupBy('outcome')->pluck('total', 'outcome');
         $terminal = (clone $query)->whereNotNull('ended_at')->whereNotNull('sent_at')->whereNotIn('outcome', ['cancelled_before_send', 'no_consent', 'suppressed', 'contact_changed', 'authorization_failed'])->count();
         $answered = (clone $query)->whereNotNull('ended_at')->whereNotNull('answered_at')->whereNotNull('sent_at')->count();
         $started = (clone $query)->whereNotNull('playback_started_at')->count();
         $completed = (clone $query)->whereNotNull('playback_completed_at')->count();
 
-        return view('broadcast.report', compact('campaign', 'counts', 'terminal', 'answered', 'started', 'completed') + [
+        return response()->view('broadcast.report', compact('campaign', 'counts', 'terminal', 'answered', 'started', 'completed') + [
             'recipients' => CampaignRecipient::where('campaign_id', $campaign->id)->selectRaw('status,count(*) as total')->groupBy('status')->pluck('total', 'status'),
             'responses' => DB::table('dtmf_responses')->whereIn('call_attempt_id', (clone $query)->select('id'))->selectRaw('node_id,digit,count(*) as total')->groupBy('node_id', 'digit')->get(), 'transfers' => (clone $query)->whereNotNull('transfer_started_at')->count(), 'transfer_success' => (clone $query)->whereNotNull('transfer_answered_at')->count(), 'optouts' => (clone $query)->whereNotNull('opted_out_at')->count(),
             'active' => (clone $query)->whereNull('ended_at')->count(),
             'attempts' => (clone $query)->latest()->paginate(50),
-        ]);
+        ])->header('Cache-Control', 'private, no-store');
     }
 }

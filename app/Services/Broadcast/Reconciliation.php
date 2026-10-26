@@ -15,12 +15,13 @@ class Reconciliation
     public function resolve(User $actor, array $record, string $evidence): void
     {
         Gate::forUser($actor)->authorize('telephony.manage');
-        Validator::make($record, ['attempt_uuid' => 'required|uuid', 'uniqueid' => 'required|string|max:255', 'ended_at' => 'required|date|before_or_equal:now', 'disposition' => 'required|in:ANSWERED,BUSY,NO ANSWER,FAILED', 'billable_seconds' => 'required|integer|min:0|max:86400'])->validate();
+        Validator::make($record, ['attempt_uuid' => 'required|uuid', 'uniqueid' => 'required|string|max:255', 'ended_at' => 'required|date|before_or_equal:now', 'answered_at' => 'nullable|date|before_or_equal:ended_at', 'disposition' => 'required|in:ANSWERED,BUSY,NO ANSWER,FAILED', 'billable_seconds' => 'required|integer|min:0|max:86400'])->validate();
+        Validator::make(compact('evidence'), ['evidence' => 'required|string|max:1000'])->validate();
         DB::transaction(function () use ($actor, $record, $evidence) {
             $engine = app(Engine::class);
             $g = $engine->mutex();
             $ready = app(Readiness::class);
-            if (! $g->healthy || ! $g->snapshot_at || strtotime($g->snapshot_at) < time() - 10) {
+            if (! $g->healthy || ! $g->snapshot_at || strtotime($g->snapshot_at) < now()->getTimestamp() - 10 || CarbonImmutable::parse($g->snapshot_at)->gt(now())) {
                 $ready->fail('A fresh, complete gateway channel snapshot is required.');
             }
             $a = CallAttempt::where('uuid', $record['attempt_uuid'])->lockForUpdate()->firstOrFail();
@@ -44,8 +45,12 @@ class Reconciliation
             };
             $outcome = $a->opted_out_at ? 'opt_out' : ($a->transfer_answered_at ? 'transfer_success' : ($a->ivr_completed_at ? 'ivr_completed' : $outcome));
             $a->billable_seconds = $record['billable_seconds'];
-            if ($record['disposition'] === 'ANSWERED') {
-                $a->answered_at ??= $a->sent_at ?? $a->created_at;
+            if ($record['disposition'] === 'ANSWERED' && ! empty($record['answered_at'])) {
+                $answer = CarbonImmutable::parse($record['answered_at']);
+                if ($answer->lt($a->sent_at ?? $a->created_at)) {
+                    $ready->fail('CDR answer cannot precede dispatch.');
+                }
+                $a->answered_at = $answer;
             }
             $a->save();
             $engine->terminal($a, $outcome);
