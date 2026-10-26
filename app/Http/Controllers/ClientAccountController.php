@@ -54,7 +54,7 @@ class ClientAccountController extends Controller
 
     public function security(Request $request)
     {
-        $this->member($request);
+        abort_unless(app(Tenancy::class)->usable($request->user()), 403);
         $data = $request->validate([
             'action' => 'required|in:password,sessions',
             'current_password' => 'required|string|max:128',

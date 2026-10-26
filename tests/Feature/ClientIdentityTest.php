@@ -37,6 +37,24 @@ class ClientIdentityTest extends TestCase
         Http::preventStrayRequests();
     }
 
+    public function test_admin_can_manage_own_security_without_client_membership(): void
+    {
+        $admin = User::factory()->create(['password' => Hash::make($this->password)]);
+        $admin->assignRole('Super Administrator');
+        $this->actingAs($admin)->get('/account/security')->assertOk()
+            ->assertSee('Account security')->assertDontSee('>Account profile</a>', false);
+        $this->post('/account/security/contact', [
+            'channel' => 'email', 'identifier' => 'admin-new@example.com', 'current_password' => 'wrong',
+        ])->assertSessionHasErrors('current_password');
+        $this->post('/account/security/contact', [
+            'channel' => 'email', 'identifier' => 'admin-new@example.com', 'current_password' => $this->password,
+        ])->assertRedirect('/verify-contact');
+        $this->post('/account/security', ['action' => 'sessions', 'current_password' => $this->password])
+            ->assertRedirect();
+        $this->assertSame(1, $admin->fresh()->auth_version);
+        $this->get('/account/security')->assertOk();
+    }
+
     private function registration(array $overrides = []): array
     {
         return array_merge(['name' => 'Test Client', 'account_name' => 'Test Account', 'country' => 'Ghana', 'broadcasting_purpose' => 'Customer updates', 'terms' => '1', 'channel' => 'email', 'email' => 'new@example.com', 'phone' => '0241234567'], $overrides);

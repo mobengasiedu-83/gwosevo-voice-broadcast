@@ -46,3 +46,7 @@
 .identity-page textarea{min-height:120px}
 .identity-page select:focus-visible,.identity-page textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 @media(max-width:650px){:is(.workspace-page,.dashboard-page) main .form-field{flex-basis:100%}.identity-page input,.identity-page select,.identity-page textarea{font-size:16px}}
+
+.workspace-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:20px 0 24px}
+.workspace-actions .button{min-height:44px;text-align:center}
+@media(max-width:550px){.workspace-actions .button{flex:1 1 100%}}

@@ -38,6 +38,14 @@
 <p>A funded wallet cannot change currency or scale. If the selected tariff differs from the wallet denomination, the assignment is rejected and audited.</p>
 </section>
 </div>
+<h2>Tariff versions</h2>
+<section><div class="table-scroll"><table><thead><tr><th>Code</th><th>Version</th><th>Currency</th><th>Scale</th><th>Rate / minute</th><th>Policy</th><th>Evidence</th><th>Created (UTC)</th></tr></thead><tbody>
+@forelse($tariffs as $tariff)
+<tr><td>{{ $tariff->code }}</td><td>{{ $tariff->version }}</td><td>{{ $tariff->currency }}</td><td>{{ $tariff->minor_unit_scale }}</td><td>{{ \App\Services\Billing\Wallet::amount((int) $tariff->rate_minor_per_minute, (int) $tariff->minor_unit_scale) }}</td><td>{{ $tariff->playback_policy }}</td><td>{{ $tariff->evidence }}</td><td>{{ $tariff->created_at ? \Carbon\CarbonImmutable::parse($tariff->created_at)->utc()->format('Y-m-d H:i') : '—' }}</td></tr>
+@empty
+<tr><td colspan="8">No tariff versions yet.</td></tr>
+@endforelse
+</tbody></table></div>{{ $tariffs->links() }}</section>
 <h2>Client assignments</h2>
 <form method="get" class="campaign-filters">
 <label>Search<input name="q" maxlength="80" value="{{ $filters['q'] ?? '' }}" placeholder="Client or tariff code"></label>
@@ -65,12 +73,4 @@ Matches
 <tr><td colspan="7">No client tariffs are assigned.</td></tr>
 @endforelse
 </tbody></table></div>{{ $assignments->links() }}</section>
-<h2>Tariff versions</h2>
-<section><div class="table-scroll"><table><thead><tr><th>Code</th><th>Version</th><th>Currency</th><th>Scale</th><th>Rate / minute</th><th>Policy</th><th>Evidence</th><th>Created (UTC)</th></tr></thead><tbody>
-@forelse($tariffs as $tariff)
-<tr><td>{{ $tariff->code }}</td><td>{{ $tariff->version }}</td><td>{{ $tariff->currency }}</td><td>{{ $tariff->minor_unit_scale }}</td><td>{{ \App\Services\Billing\Wallet::amount((int) $tariff->rate_minor_per_minute, (int) $tariff->minor_unit_scale) }}</td><td>{{ $tariff->playback_policy }}</td><td>{{ $tariff->evidence }}</td><td>{{ $tariff->created_at ? \Carbon\CarbonImmutable::parse($tariff->created_at)->utc()->format('Y-m-d H:i') : '—' }}</td></tr>
-@empty
-<tr><td colspan="8">No tariff versions yet.</td></tr>
-@endforelse
-</tbody></table></div>{{ $tariffs->links() }}</section>
 @endsection

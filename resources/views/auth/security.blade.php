@@ -1,7 +1,11 @@
 @extends('dashboard.layout')
 @section('title','Account security')
 @section('content')
-<h1>Account security</h1><p><a href="{{ route('account.profile') }}">Account profile</a> · <a href="{{ route('dashboard.overview') }}">Dashboard</a></p>
+<h1>Account security</h1>
+<nav class="workspace-actions" aria-label="Account shortcuts">
+@if(auth()->user()->clientMembership()->exists())<a class="button secondary" href="{{ route('account.profile') }}">Account profile</a>@endif
+<a class="button secondary" href="{{ route('dashboard.overview') }}">Dashboard</a>
+</nav>
 <section><h2>Update your sign-in contact</h2><p>Confirm your password and verify the new contact before it replaces your sign-in details.</p>
 <p>Email: {{ auth()->user()->email ?: 'Not added' }} · {{ auth()->user()->email_verified_at ? 'Verified' : 'Not verified' }}</p>
 <p>Phone: {{ auth()->user()->phone_e164 ?: 'Not added' }} · {{ auth()->user()->phone_verified_at ? 'Verified' : 'Not verified' }}</p>

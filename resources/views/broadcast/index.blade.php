@@ -1,6 +1,15 @@
 @extends('foundation.layout')
 @section('content')
-<h2>Broadcast operations</h2>@if(auth()->user()->hasAnyPermission(['campaigns.manage','campaigns.approve','telephony.manage']))<p><a href="{{ route('interactive.index') }}">Voice & IVR</a></p>@endif @can('telephony.manage')<p><a href="{{ route('telephony.index') }}">Telephony & caller IDs</a></p>@endcan<p><a href="{{ route('workspace') }}">Contacts and approvals</a></p>
+<h2>Broadcast operations</h2>
+<nav class="workspace-actions" aria-label="Broadcast workspace shortcuts">
+@if(auth()->user()->hasAnyPermission(['campaigns.manage','campaigns.approve','telephony.manage']))
+<a class="button secondary" href="{{ route('interactive.index') }}">Voice & IVR</a>
+@endif
+@can('telephony.manage')
+<a class="button secondary" href="{{ route('telephony.index') }}">Telephony & caller IDs</a>
+@endcan
+<a class="button secondary" href="{{ route('workspace') }}">Contacts and approvals</a>
+</nav>
 @if(!config('voice_broadcast.enabled'))<p class="notice">Live dispatch is disabled. Verified capacity settings and PBX installation are required before enabling it.</p>@endif
 @if($gateway)<section><h2>Gateway health</h2><p>AMI: {{ $gateway->healthy && $gateway->heartbeat_at && strtotime($gateway->heartbeat_at)>time()-15 ? 'Connected' : 'Offline or stale' }} · Last heartbeat (UTC): {{ $gateway->heartbeat_at ?? 'Never' }} · Channel snapshot: {{ $gateway->snapshot_at ?? 'Never' }}</p><p>Emergency stop: {{ $gateway->emergency_stop ? 'Active' : 'Clear' }}</p></section>@endif
 @can('broadcast.emergency')<section><h2>Emergency broadcast controls</h2><p>Stop cancels broadcast campaigns and requests hangup only on their identified channels. Ordinary PBX calls continue.</p><form method="post" action="{{ route('broadcast.emergency') }}">@csrf<button name="action" value="stop">Stop all broadcasts</button><button name="action" value="reset">Reset global stop</button></form></section>@endcan

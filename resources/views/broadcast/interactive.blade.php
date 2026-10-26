@@ -2,9 +2,14 @@
 @section('title', $telephonyPage ? 'Telephony' : 'Voice & IVR')
 @section('content')
 <h2>{{ $telephonyPage ? 'Telephony' : 'Voice & IVR' }}</h2>
-<p>@can('broadcast.operate')<a href="{{ route('broadcast.index') }}">Campaign operations</a> · @endcan
-@if($telephonyPage)<a href="{{ route('interactive.index') }}">Voice & IVR</a>
-@else @can('telephony.manage')<a href="{{ route('telephony.index') }}">Telephony & caller IDs</a>@endcan @endif</p>
+<nav class="workspace-actions" aria-label="Voice and telephony shortcuts">
+@can('broadcast.operate')<a class="button secondary" href="{{ route('broadcast.index') }}">Campaign operations</a>@endcan
+@if($telephonyPage)
+<a class="button secondary" href="{{ route('interactive.index') }}">Voice & IVR</a>
+@else
+@can('telephony.manage')<a class="button secondary" href="{{ route('telephony.index') }}">Telephony & caller IDs</a>@endcan
+@endif
+</nav>
 @if($telephonyPage)
 @can('telephony.manage')<section><h2>Outbound caller IDs</h2><p>Set the default caller ID and additional carrier-approved numbers for each trunk. Existing campaign approvals keep their selected number; removing that number blocks new calls.</p>
 @foreach($trunks as $trunk)<h3>{{ $trunk->name }}</h3><form method="post" action="{{ route('interactive.caller_ids',$trunk) }}">@csrf<label>Default caller ID <input name="caller_id" value="{{ $trunk->caller_id }}" required></label><label>Additional approved numbers, comma-separated <input name="allowed_caller_ids" value="{{ implode(', ', $trunk->allowed_caller_ids ?? []) }}"></label><label>Carrier approval evidence <input name="evidence" required maxlength="2000"></label><button>Save caller IDs</button></form><details><summary>Verify or update capacity for {{ $trunk->name }}</summary><form method="post" action="{{ route('interactive.capacity',$trunk) }}">@csrf

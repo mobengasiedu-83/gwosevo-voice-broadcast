@@ -180,14 +180,14 @@ class IdentityController extends Controller
 
     public function security(Request $request)
     {
-        abort_unless($request->user()->clientMembership()->exists(), 403);
+        abort_unless(app(Tenancy::class)->usable($request->user()), 403);
 
         return response()->view('auth.security')->header('Cache-Control', 'private, no-store');
     }
 
     public function changeContact(Request $request, Challenges $challenges)
     {
-        abort_unless($request->user()->clientMembership()->exists(), 403);
+        abort_unless(app(Tenancy::class)->usable($request->user()), 403);
         $data = $request->validate(['channel' => ['required', Rule::in($this->channels())], 'identifier' => 'required|string|max:254', 'current_password' => 'required|current_password:web']);
         $challenges->start($request, 'change', $data['channel'], $data['identifier'], []);
 

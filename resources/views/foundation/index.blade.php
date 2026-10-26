@@ -1,6 +1,11 @@
 @extends('foundation.layout')
 @section('content')
-<h2>Broadcast workspace</h2><p><a href="{{ route('dashboard.overview') }}">Operations dashboard</a></p><p><a href="{{ route('broadcast.index') }}">One-way broadcasts, voice library and reports</a></p><p>Manage contacts and campaign reviews. Configure and operate approved one-way campaigns from Broadcast operations.</p>
+<h2>Broadcast workspace</h2>
+<nav class="workspace-actions" aria-label="Workspace shortcuts">
+<a class="button secondary" href="{{ route('dashboard.overview') }}">Operations dashboard</a>
+<a class="button secondary" href="{{ route('broadcast.index') }}">One-way broadcasts, voice library and reports</a>
+</nav>
+<p>Manage contacts and campaign reviews. Configure and operate approved one-way campaigns from Broadcast operations.</p>
 @can('contacts.view')<section id="contacts"><h2>Contacts</h2>
 @can('contacts.manage')<form method="post" action="{{ route('contacts.store') }}">@csrf
 <label>Name <input name="name" required maxlength="255"></label><label>Phone <input name="phone" placeholder="0241234567" required></label><label>Source <input name="source" required maxlength="255"></label><button>Add contact</button></form>@endcan
