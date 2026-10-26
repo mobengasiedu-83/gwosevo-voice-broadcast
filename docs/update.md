@@ -1,3 +1,31 @@
+## Recovering a partially applied notification migration
+
+If `2026_10_26_180000_add_notifications` fails because `user_notifications`
+already exists, the table exists while Laravel still considers the migration
+pending. MySQL can retain tables created before a later migration step fails.
+Check the earlier deployment error or logs for the original cause.
+
+Back up the production database, then deploy the corrected migration from this
+repository. It creates each missing notification table independently and preserves
+existing rows. Run:
+
+```sh
+cd /var/www/gwosevo-voice-broadcast
+sudo -u gwosevo php artisan migrate:status
+sudo -u gwosevo php artisan migrate --force
+sudo -u gwosevo php artisan migrate:status
+```
+
+The migration should now show as Ran. If another error appears, resolve that
+error before continuing the update steps below. Existing tables are assumed to
+have the expected schema; the retry does not repair missing columns, indexes, or
+foreign keys. Inspect `SHOW CREATE TABLE user_notifications` and, if present,
+`SHOW CREATE TABLE notification_deliveries` when investigating schema differences.
+Do not drop production tables, run `migrate:fresh`, or manually mark the migration
+as completed to bypass the error.
+
+## Production update
+
 cd /var/www/gwosevo-voice-broadcast
 
 set -e

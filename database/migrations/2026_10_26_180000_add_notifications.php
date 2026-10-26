@@ -15,44 +15,50 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('user_notifications', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('client_id')->nullable()->constrained('clients')->nullOnDelete();
-            $table->string('category', 24);
-            $table->string('event_key', 80);
-            $table->string('severity', 16)->default('info');
-            $table->string('title', 160);
-            $table->text('body')->nullable();
-            $table->string('url', 2048)->nullable();
-            $table->json('data')->nullable();
-            $table->string('dedupe_key', 160)->nullable();
-            $table->boolean('in_app')->default(true);
-            $table->timestamp('read_at')->nullable();
-            $table->timestamps();
+        // MySQL DDL can survive a failed migration without a migrations row.
+        // Resume each table independently so a retry preserves existing alerts.
+        if (! Schema::hasTable('user_notifications')) {
+            Schema::create('user_notifications', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+                $table->foreignId('client_id')->nullable()->constrained('clients')->nullOnDelete();
+                $table->string('category', 24);
+                $table->string('event_key', 80);
+                $table->string('severity', 16)->default('info');
+                $table->string('title', 160);
+                $table->text('body')->nullable();
+                $table->string('url', 2048)->nullable();
+                $table->json('data')->nullable();
+                $table->string('dedupe_key', 160)->nullable();
+                $table->boolean('in_app')->default(true);
+                $table->timestamp('read_at')->nullable();
+                $table->timestamps();
 
-            $table->unique(['user_id', 'dedupe_key']);
-            $table->index(['user_id', 'read_at', 'id']);
-            $table->index(['client_id', 'created_at']);
-            $table->index(['user_id', 'created_at']);
-        });
+                $table->unique(['user_id', 'dedupe_key']);
+                $table->index(['user_id', 'read_at', 'id']);
+                $table->index(['client_id', 'created_at']);
+                $table->index(['user_id', 'created_at']);
+            });
+        }
 
-        Schema::create('notification_deliveries', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('notification_id')->constrained('user_notifications')->cascadeOnDelete();
-            $table->string('channel', 16);
-            $table->string('status', 16)->default('queued');
-            $table->unsignedTinyInteger('attempts')->default(0);
-            $table->string('provider_message_id', 255)->nullable();
-            $table->text('last_error')->nullable();
-            $table->timestamp('queued_at')->nullable();
-            $table->timestamp('attempted_at')->nullable();
-            $table->timestamp('sent_at')->nullable();
-            $table->timestamps();
+        if (! Schema::hasTable('notification_deliveries')) {
+            Schema::create('notification_deliveries', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('notification_id')->constrained('user_notifications')->cascadeOnDelete();
+                $table->string('channel', 16);
+                $table->string('status', 16)->default('queued');
+                $table->unsignedTinyInteger('attempts')->default(0);
+                $table->string('provider_message_id', 255)->nullable();
+                $table->text('last_error')->nullable();
+                $table->timestamp('queued_at')->nullable();
+                $table->timestamp('attempted_at')->nullable();
+                $table->timestamp('sent_at')->nullable();
+                $table->timestamps();
 
-            $table->unique(['notification_id', 'channel']);
-            $table->index(['channel', 'status', 'queued_at']);
-        });
+                $table->unique(['notification_id', 'channel']);
+                $table->index(['channel', 'status', 'queued_at']);
+            });
+        }
     }
 
     public function down(): void
