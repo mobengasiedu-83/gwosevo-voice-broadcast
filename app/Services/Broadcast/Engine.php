@@ -12,6 +12,8 @@ use App\Models\TrunkProfile;
 use App\Models\User;
 use App\Services\Billing\Rating;
 use App\Services\Billing\Tariffs;
+use App\Services\Billing\Wallet;
+use App\Services\Billing\WalletDeclined;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
@@ -22,6 +24,9 @@ use Illuminate\Support\Str;
 
 class Engine
 {
+    /** Outcomes that can never be billable, so a held reservation is releasable. */
+    private const UNANSWERED_OUTCOMES = ['busy', 'no_answer', 'failed', 'invalid_number', 'originate_failed', 'authorization_failed'];
+
     public function __construct(private Readiness $ready) {}
 
     public function mutex()
@@ -99,6 +104,10 @@ class Engine
                 $eligible = collect($s['targets'])->contains(fn ($target) => $this->ready->exclusion($target['id'], $target['phone_e164'], $s['purpose']) === null);
                 if (! $eligible) {
                     $this->ready->fail('No eligible contacts. Review DND/suppression and the frozen audience before launch.');
+                }
+                $credit = app(Wallet::class)->admission($campaign->client_id, app(Tariffs::class)->snapshot($campaign->client_id));
+                if ($credit['applicable'] && ! $credit['allowed']) {
+                    $this->ready->fail(Wallet::message($credit['reason']));
                 }
                 CampaignRun::firstOrCreate(['campaign_id' => $campaign->id], ['uuid' => (string) Str::uuid(), 'campaign_version_id' => $version->id, 'started_by' => $actor->id, 'snapshot' => $version->snapshot, 'created_at' => now()]);
                 foreach ($s['targets'] as $target) {
@@ -185,6 +194,20 @@ class Engine
                 }
                 $uuid = (string) Str::uuid();
                 $attempt = CallAttempt::create(['tariff_snapshot' => app(Tariffs::class)->snapshot($campaign->client_id), 'uuid' => $uuid, 'action_id' => 'vb-'.$uuid, 'uniqueid' => $uuid, 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $campaign->active_version_id, 'trunk_profile_id' => $trunk->id, 'token' => bin2hex(random_bytes(32)), 'state' => 'authorizing', 'attempt_no' => (CallAttempt::where('campaign_recipient_id', $recipient->id)->max('attempt_no') ?? 0) + 1]);
+                try {
+                    app(Wallet::class)->reserve($attempt);
+                } catch (WalletDeclined $declined) {
+                    // Fail closed: no origination without a held reservation.
+                    $attempt->update(['state' => 'terminal', 'outcome' => 'wallet_declined', 'ended_at' => now(), 'token' => null]);
+                    $campaign->update(['status' => 'paused']);
+                    \App\Models\AuditLog::create([
+                        'client_id' => $campaign->client_id, 'actor_id' => null, 'action' => 'billing.wallet_declined',
+                        'entity_type' => $attempt->getMorphClass(), 'entity_id' => $attempt->id,
+                        'details' => ['reason' => $declined->reason] + $declined->context, 'created_at' => now(),
+                    ]);
+
+                    return null;
+                }
                 DB::table('channel_reservations')->insert(['call_attempt_id' => $attempt->id, 'campaign_id' => $campaign->id, 'trunk_profile_id' => $trunk->id, 'acquired_at' => now()]);
                 $recipient->update(['status' => 'reserved']);
                 $campaign->update(['last_dispatched_at' => now()->format('Y-m-d H:i:s.u'), 'dispatch_score' => $campaign->dispatch_score + 1 / max(1, $campaign->priority)]);
@@ -211,8 +234,13 @@ class Engine
         }
         $unsent = ! $attempt->sent_at && in_array($attempt->state, ['authorizing', 'ready'], true);
         $attempt->update(['state' => 'terminal', 'outcome' => $outcome, 'ended_at' => now()]);
+        $answered = $attempt->answered_at || $attempt->playback_started_at || $attempt->playback_completed_at || $attempt->ivr_completed_at || $attempt->opted_out_at || $attempt->transfer_answered_at;
         if ($attempt->sent_at) {
             app(Rating::class)->issue($attempt, 'timing_required');
+            if (! $answered && in_array($outcome, self::UNANSWERED_OUTCOMES, true)) {
+                // Definitive no-answer/busy/failed: release the hold, post zero usage.
+                app(Wallet::class)->release($attempt, 'Call ended without an answer: '.$outcome);
+            }
         } elseif ($unsent) {
             app(Rating::class)->unsent($attempt);
         }

@@ -129,6 +129,13 @@ class Challenges
                 $request->session()->forget('identity');
                 throw ValidationException::withMessages([$field => 'Verification delivery is unavailable. Please try again later.']);
             }
+        } else {
+            // Generic responses hide this on purpose, so record why nothing was sent.
+            Log::notice('identity.otp_suppressed', [
+                'purpose' => $purpose, 'channel' => $channel,
+                'reason' => $purpose === 'register' ? 'duplicate_contact' : 'ineligible_request',
+                'identifier_hash' => hash('sha256', $identifier),
+            ]);
         }
     }
 

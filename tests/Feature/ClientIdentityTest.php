@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
@@ -125,6 +126,20 @@ class ClientIdentityTest extends TestCase
         $this->post('/register', $this->registration(['channel' => 'sms']))->assertRedirect('/verify-contact');
         Http::assertNothingSent();
         Mail::assertNothingSent();
+    }
+
+    public function test_duplicate_contact_registration_is_logged_as_suppressed(): void
+    {
+        Log::spy();
+        Http::fake();
+        User::factory()->create(['phone_e164' => '+233241234567', 'phone_verified_at' => now()]);
+        $this->post('/register', $this->registration(['channel' => 'sms']))->assertRedirect('/verify-contact');
+        Http::assertNothingSent();
+        Log::shouldHaveReceived('notice')->withArgs(fn (string $event, array $context = []) => $event === 'identity.otp_suppressed'
+            && ($context['purpose'] ?? null) === 'register'
+            && ($context['channel'] ?? null) === 'sms'
+            && ($context['reason'] ?? null) === 'duplicate_contact'
+            && ($context['identifier_hash'] ?? null) === hash('sha256', '+233241234567'))->atLeast()->once();
     }
 
     public function test_email_recovery_keeps_using_a_single_identifier_field(): void
@@ -274,6 +289,31 @@ class ClientIdentityTest extends TestCase
         $this->post('/register', $this->registration(['channel' => 'sms']))->assertSessionHasErrors('phone');
         $this->assertNotNull(DB::table('identity_challenges')->value('consumed_at'));
         $this->assertDatabaseCount('users', 0);
+    }
+
+    public function test_txtconnect_rejection_is_logged_with_provider_detail_but_not_the_code(): void
+    {
+        Log::spy();
+        Http::fake(['api.txtconnect.net/*' => Http::response(['msg' => 'Insufficient credits', 'data' => ['status_code' => '101', 'message' => 'Insufficient credits', 'in_error' => true]], 200)]);
+        $this->post('/register', $this->registration(['channel' => 'sms']))->assertSessionHasErrors('phone');
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $event, array $context = []) => $event === 'identity.sms_failed'
+            && ($context['provider_code'] ?? null) === '101'
+            && ($context['provider_message'] ?? null) === 'Insufficient credits'
+            && array_keys($context) === ['http_status', 'provider_code', 'provider_message', 'identifier_hash'])->once();
+    }
+
+    public function test_sms_test_command_normalises_numbers_and_reports_the_provider_result(): void
+    {
+        Http::fake(['api.txtconnect.net/*' => Http::response(['messageId' => 'S1799_test', 'data' => ['status_code' => '000', 'in_error' => false]], 200)]);
+        $this->artisan('identity:sms-test', ['phone' => '0531005130'])
+            ->expectsOutputToContain('TxtConnect accepted the SMS for +233531005130. Message id: S1799_test')
+            ->assertSuccessful();
+        Http::assertSent(fn ($request) => $request['to'] === '233531005130' && $request['from'] === 'VoiceCast' && $request['unicode'] === '0');
+
+        Http::fake(['api.txtconnect.net/*' => Http::response(['msg' => 'Invalid sender', 'data' => ['status_code' => '103', 'in_error' => true]], 200)]);
+        $this->artisan('identity:sms-test', ['phone' => '+233531005130'])->expectsOutputToContain('SMS delivery failed')->assertFailed();
+
+        $this->artisan('identity:sms-test', ['phone' => '123'])->expectsOutputToContain('The mobile number is not valid.')->assertFailed();
     }
 
     public function test_expired_code_cannot_verify_or_create_an_account(): void

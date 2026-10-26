@@ -3,6 +3,7 @@
 
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\CallRatingController;
+use App\Http\Controllers\WalletController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ClientAccountController;
 use App\Http\Controllers\ClientAdminController;
@@ -414,3 +415,13 @@ Route::middleware('auth')->prefix('account')->name('account.')->group(function (
 });
 
 Route::get('/billing/reconciliation', [CallRatingController::class, 'index'])->middleware('auth')->name('billing.exceptions');
+
+Route::middleware('auth')->prefix('billing/wallets')->name('billing.')->group(function () {
+    $wallets = WalletController::class;
+    Route::get('/', [$wallets, 'index'])->name('wallets');
+    Route::get('/{client}', [$wallets, 'show'])->whereNumber('client')->name('wallets.show');
+    Route::post('/{client}/open', [$wallets, 'open'])->whereNumber('client')->name('wallets.open');
+    Route::post('/{client}/entries', [$wallets, 'post'])->whereNumber('client')->name('wallets.post');
+    Route::post('/{client}/entries/{entry}/reverse', [$wallets, 'reverse'])->whereNumber(['client', 'entry'])->name('wallets.reverse');
+});
+

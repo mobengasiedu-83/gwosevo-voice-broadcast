@@ -46,4 +46,9 @@ class Client extends Model
     {
         return $this->hasMany(AudioFile::class);
     }
+
+    public function wallet()
+    {
+        return $this->hasOne(WalletAccount::class);
+    }
 }

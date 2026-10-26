@@ -10,7 +10,7 @@ class RateCalls extends Command
 {
     protected $signature = 'billing:rate {file : Verified precision CDR/CEL JSON array} {--actor=} {--source=} {--evidence=}';
 
-    protected $description = 'Reconcile trusted call timing and rate individual attempts; never debit a wallet';
+    protected $description = 'Reconcile trusted call timing, rate individual attempts and settle wallet charges once';
 
     public function handle(Rating $rating): int
     {
@@ -40,7 +40,7 @@ class RateCalls extends Command
 
             return self::FAILURE;
         }
-        $this->info('Rated/replayed: '.$counts['rated'].'; held for review: '.$counts['held'].'. No wallet was debited.');
+        $this->info('Rated/replayed: '.$counts['rated'].'; held for review: '.$counts['held'].'. Wallet charges settle once per rated attempt.');
 
         return $counts['held'] ? self::FAILURE : self::SUCCESS;
     }

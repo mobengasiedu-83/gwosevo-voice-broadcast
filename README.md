@@ -320,4 +320,4 @@ Client portal implementation: [Modules 6–9 specification review](docs/modules-
 
 [Module 11 client campaigns, schedules and IVR](docs/module-11-client-campaigns.md) documents shared-account controls, frozen execution and the remaining wallet admission dependency.
 
-[Module 12 call reconciliation and minute rating](docs/module-12-call-rating.md) covers trusted precise timing, immutable tariff snapshots, per-attempt ratings and exception holds. Wallet settlement remains Module 13.
+[Module 12 call reconciliation and minute rating](docs/module-12-call-rating.md) covers trusted precise timing, immutable tariff snapshots, per-attempt ratings and exception holds. [Module 13 calling wallet](docs/module-13-calling-wallet.md) adds prepaid credit, held reservations, exactly-once settlement and the append-only ledger that charges those ratings.

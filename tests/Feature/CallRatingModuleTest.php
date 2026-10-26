@@ -267,7 +267,7 @@ class CallRatingModuleTest extends TestCase
         try {
             file_put_contents($file, json_encode([$proof, $proof], JSON_THROW_ON_ERROR));
             $this->artisan('billing:rate', ['file' => $file, '--actor' => $this->admin->id, '--source' => 'verified-cel', '--evidence' => 'private/cli-import'])
-                ->expectsOutputToContain('No wallet was debited')->assertSuccessful();
+                ->expectsOutputToContain('Wallet charges settle once per rated attempt')->assertSuccessful();
             $this->assertSame(1, CallRating::count());
             $this->assertSame(2, $a->rating->billable_minutes);
         } finally {

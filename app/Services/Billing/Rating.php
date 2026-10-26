@@ -173,6 +173,9 @@ class Rating
             return 'held';
         }
         if (CallRating::where('call_attempt_id', $a->id)->exists()) {
+            // Replays never re-charge, but they still heal a missing settlement.
+            app(Wallet::class)->settle(CallRating::where('call_attempt_id', $a->id)->firstOrFail());
+
             return 'rated';
         }
         $tariff = $a->tariff_snapshot;
@@ -192,12 +195,13 @@ class Rating
             return 'held';
         }
         $this->close($a, ['playback_policy'], $actor);
-        CallRating::create([
+        $rating = CallRating::create([
             'call_attempt_id' => $a->id, 'call_timing_evidence_id' => $timing->id, 'tariff_snapshot' => $tariff,
             'policy_version' => 'ceil_minute_v1', 'duration_ms' => $timing->duration_ms, 'billable_minutes' => $timing->billable_minutes,
             'amount_minor' => $timing->answered ? $timing->billable_minutes * (int) $tariff['rate_minor_per_minute'] : 0,
             'currency' => $tariff['currency'] ?? null, 'minor_unit_scale' => $tariff['minor_unit_scale'] ?? null, 'created_at' => now(),
         ]);
+        app(Wallet::class)->settle($rating);
         app(Foundation::class)->audit($actor, 'billing.call_rated', $a, ['minutes' => $timing->billable_minutes, 'policy' => 'ceil_minute_v1']);
 
         return 'rated';
@@ -225,6 +229,8 @@ class Rating
             'verified_by' => null, 'created_at' => now(),
         ]);
         CallRating::create(['call_attempt_id' => $a->id, 'call_timing_evidence_id' => $timing->id, 'tariff_snapshot' => $a->tariff_snapshot, 'policy_version' => 'ceil_minute_v1', 'duration_ms' => 0, 'billable_minutes' => 0, 'amount_minor' => 0, 'currency' => $a->tariff_snapshot['currency'] ?? null, 'minor_unit_scale' => $a->tariff_snapshot['minor_unit_scale'] ?? null, 'created_at' => now()]);
+        // A zero rating settles (releases) any hold and never posts a usage charge.
+        app(Wallet::class)->settle(CallRating::where('call_attempt_id', $a->id)->firstOrFail());
         AuditLog::create(['client_id' => app(Tenancy::class)->ownerOf($a), 'actor_id' => null, 'action' => 'billing.unsent_zero_rated', 'entity_type' => $a->getMorphClass(), 'entity_id' => $a->id, 'details' => ['reason' => $a->outcome], 'created_at' => now()]);
     }
 

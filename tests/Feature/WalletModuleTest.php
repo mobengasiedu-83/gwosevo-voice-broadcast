@@ -1,0 +1,407 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\AuditLog;
+use App\Models\CallAttempt;
+use App\Models\CallRating;
+use App\Models\CallTariff;
+use App\Models\Campaign;
+use App\Models\CampaignRecipient;
+use App\Models\CampaignVersion;
+use App\Models\Client;
+use App\Models\User;
+use App\Models\WalletAccount;
+use App\Models\WalletLedgerEntry;
+use App\Models\WalletReservation;
+use App\Services\Billing\Rating;
+use App\Services\Billing\Tariffs;
+use App\Services\Billing\Wallet;
+use App\Services\Billing\WalletDeclined;
+use App\Services\Broadcast\Engine;
+use App\Services\Clients\Accounts;
+use Carbon\CarbonImmutable;
+use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Tests\TestCase;
+
+class WalletModuleTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private User $admin;
+
+    private User $member;
+
+    private Client $client;
+
+    private Campaign $campaign;
+
+    private CallTariff $tariff;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $this->travelTo(CarbonImmutable::parse('2026-10-26T12:00:00.000000Z'));
+        config()->set('call_rating.trusted_sources', ['verified-cel']);
+        $this->admin = User::factory()->create();
+        $this->admin->assignRole('Super Administrator');
+        $accounts = app(Accounts::class);
+        $this->client = $accounts->create($this->admin, 'Wallet customer');
+        $accounts->status($this->admin, $this->client, 'active', 'Ready');
+        $this->member = User::factory()->create();
+        $accounts->member($this->admin, $this->client, $this->member, 'owner');
+        $this->campaign = Campaign::create(['client_id' => $this->client->id, 'owner_id' => $this->member->id, 'name' => 'Wallet campaign', 'purpose' => 'Updates', 'type' => 'one_way', 'status' => 'running']);
+        // 30 minor units per minute in GHS: fifteen reserved minutes cost 450 minor units.
+        $this->tariff = app(Tariffs::class)->create($this->admin, ['code' => 'wallet-test', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2, 'rate_minor_per_minute' => 30, 'playback_policy' => 'charge_answered'], 'Test-only approved fixture');
+        app(Tariffs::class)->assign($this->admin, $this->client, $this->tariff, 'Test-only assignment');
+    }
+
+    private function wallet(): WalletAccount
+    {
+        return app(Wallet::class)->open($this->admin, $this->client, 'GHS', 2, 'Approved onboarding');
+    }
+
+    private function attempt(int $ms = 60001, bool $answered = true, int $attemptNo = 1, int $endOffsetSeconds = 2): array
+    {
+        $end = CarbonImmutable::now()->subSeconds($endOffsetSeconds);
+        $answer = $end->subMilliseconds($ms);
+        $recipient = CampaignRecipient::create(['campaign_id' => $this->campaign->id, 'status' => 'terminal']);
+        $uuid = (string) Str::uuid();
+        $attempt = CallAttempt::create([
+            'uuid' => $uuid, 'uniqueid' => $uuid, 'action_id' => 'vb-'.$uuid, 'linkedid' => 'linked-'.$uuid,
+            'campaign_recipient_id' => $recipient->id, 'attempt_no' => $attemptNo, 'state' => 'terminal', 'outcome' => $answered ? 'completed' : 'busy',
+            'sent_at' => $answer->subSeconds(2), 'answered_at' => $answered ? $answer : null, 'ended_at' => $end,
+            'playback_completed_at' => $answered ? $end : null,
+            'tariff_snapshot' => app(Tariffs::class)->snapshot($this->client->id),
+        ]);
+
+        return [$attempt, ['attempt_uuid' => $uuid, 'uniqueid' => $uuid, 'linkedid' => $attempt->linkedid, 'disposition' => $answered ? 'ANSWERED' : 'BUSY', 'answered_at' => $answered ? $answer->format('Y-m-d\TH:i:s.u\Z') : null, 'ended_at' => $end->format('Y-m-d\TH:i:s.u\Z'), 'duration_ms' => $answered ? $ms : 0]];
+    }
+
+    public function test_funding_and_adjustments_are_exact_idempotent_and_corrected_by_reversal(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $this->assertSame(0, $wallet->available_minor);
+
+        $funding = $wallets->post($this->admin, $wallet, 'funding', '100.00', 'Approved initial top-up', 'FIN-001', 'test-funding-1');
+        $this->assertSame(10000, $wallet->refresh()->available_minor);
+        $this->assertSame('100.00', Wallet::amount($wallet->available_minor, $wallet->minor_unit_scale));
+
+        // The same idempotency key never posts twice.
+        $replay = $wallets->post($this->admin, $wallet, 'funding', '100.00', 'Approved initial top-up', 'FIN-001', 'test-funding-1');
+        $this->assertSame($funding->id, $replay->id);
+        $this->assertSame(10000, $wallet->refresh()->available_minor);
+        $this->assertSame(1, WalletLedgerEntry::where('wallet_id', $wallet->id)->count());
+
+        $wallets->post($this->admin, $wallet, 'adjustment', '-12.34', 'Reviewed goodwill correction', 'FIN-002', 'test-adjust-1');
+        $this->assertSame(8766, $wallet->refresh()->available_minor);
+
+        foreach ([['adjustment', '-87.67'], ['adjustment', '1.001'], ['funding', '-5.00']] as [$kind, $amount]) {
+            try {
+                $wallets->post($this->admin, $wallet, $kind, $amount, 'Invalid entry', 'FIN-BAD');
+                $this->fail('Invalid ledger entry was posted: '.$kind.' '.$amount);
+            } catch (ValidationException $e) {
+                $this->assertArrayHasKey('amount', $e->errors());
+            }
+        }
+        $this->assertSame(8766, $wallet->refresh()->available_minor);
+
+        $wallets->post($this->admin, $wallet, 'funding', '50.00', 'Second approved top-up', 'FIN-003', 'test-funding-2');
+        $this->assertSame(13766, $wallet->refresh()->available_minor);
+
+        // Corrections append an opposite entry; the original funding row is untouched.
+        $reversal = $wallets->reverse($this->admin, $wallet, $funding, 'Top-up returned to payer', 'FIN-004');
+        $this->assertSame('reversal', $reversal->type);
+        $this->assertSame($funding->id, $reversal->reversal_of_id);
+        $this->assertSame(-10000, $reversal->available_delta_minor);
+        $this->assertSame(3766, $wallet->refresh()->available_minor);
+        $this->assertSame(10000, WalletLedgerEntry::find($funding->id)->available_delta_minor);
+
+        try {
+            $wallets->reverse($this->admin, $wallet, $funding, 'Duplicate reversal', 'FIN-005');
+            $this->fail('A funding entry was reversed twice.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('already been reversed', collect($e->errors())->flatten()->first());
+        }
+
+        $check = $wallets->verify($wallet);
+        $this->assertTrue($check['available_match']);
+        $this->assertTrue($check['reserved_match']);
+        $this->assertTrue($check['held_match']);
+        $this->assertSame(3766, $check['ledger_available_minor']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'billing.wallet_funding']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'billing.wallet_reversal']);
+    }
+
+    public function test_only_billing_administrators_can_move_credit(): void
+    {
+        $wallet = $this->wallet();
+        $wallet->refresh();
+
+        try {
+            app(Wallet::class)->open($this->admin, $this->client, 'GHS', 2, 'Second wallet');
+            $this->fail('A duplicate wallet was opened.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('client_id', $e->errors());
+        }
+
+        $funding = app(Wallet::class)->post($this->admin, $wallet, 'funding', '10.00', 'Approved top-up', 'FIN-000', 'test-auth');
+
+        try {
+            app(Wallet::class)->post($this->member, $wallet, 'funding', '10.00', 'Attempted top-up', 'NONE');
+            $this->fail('A client member posted wallet credit.');
+        } catch (AuthorizationException $e) {
+            $this->assertTrue(true);
+        }
+
+        try {
+            app(Wallet::class)->reverse($this->member, $wallet, $funding, 'Attempted reversal', 'NONE');
+            $this->fail('A client member reversed wallet credit.');
+        } catch (AuthorizationException $e) {
+            $this->assertTrue(true);
+        }
+
+        $wallet->refresh();
+        $this->assertSame(1000, $wallet->available_minor);
+        $this->assertSame(0, WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'reversal')->count());
+        $this->assertSame(1, WalletLedgerEntry::where('wallet_id', $wallet->id)->count());
+    }
+
+    public function test_admission_and_reservation_fail_closed_without_enough_credit(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $snapshot = app(Tariffs::class)->snapshot($this->client->id);
+
+        $admission = $wallets->admission($this->client->id, $snapshot);
+        $this->assertTrue($admission['applicable']);
+        $this->assertFalse($admission['allowed']);
+        $this->assertSame('insufficient_credit', $admission['reason']);
+        $this->assertSame(450, $admission['exposure_minor']);
+        $this->assertSame('Insufficient calling credit for one reserved call. Ask Finance to top up the wallet before launching.', Wallet::message('insufficient_credit'));
+
+        [$first] = $this->attempt();
+        try {
+            $wallets->reserve($first);
+            $this->fail('A reservation was created without available credit.');
+        } catch (WalletDeclined $declined) {
+            $this->assertSame('insufficient_credit', $declined->reason);
+        }
+        $this->assertSame(0, WalletReservation::count());
+
+        $wallets->post($this->admin, $wallet, 'funding', '4.50', 'Minimum launch credit', 'FIN-010', 'test-minimum');
+        $this->assertTrue($wallets->admission($this->client->id, $snapshot)['allowed']);
+
+        $reservation = $wallets->reserve($first);
+        $this->assertSame(450, $reservation->amount_minor);
+        $this->assertSame('held', $reservation->state);
+        $this->assertSame(0, $wallet->refresh()->available_minor);
+        $this->assertSame(450, $wallet->reserved_minor);
+
+        // A duplicate hold for the same attempt returns the existing hold, never a second one.
+        $this->assertSame($reservation->id, $wallets->reserve($first)->id);
+        $this->assertSame(450, $wallet->refresh()->reserved_minor);
+
+        [$second] = $this->attempt(attemptNo: 2);
+        try {
+            $wallets->reserve($second);
+            $this->fail('A second call was reserved with no remaining credit.');
+        } catch (WalletDeclined $declined) {
+            $this->assertSame('insufficient_credit', $declined->reason);
+        }
+
+        // Accounts without a wallet are not wallet-billed yet.
+        $this->assertFalse($wallets->admission($this->client->id + 999, $snapshot)['applicable']);
+    }
+
+    public function test_campaign_launch_is_blocked_while_the_wallet_is_unfunded(): void
+    {
+        $this->wallet();
+        $snapshot = app(Tariffs::class)->snapshot($this->client->id);
+        $this->assertFalse(app(Wallet::class)->admission($this->campaign->client_id, $snapshot)['allowed']);
+
+        app(Wallet::class)->post($this->admin, $this->client->wallet, 'funding', '100.00', 'Funded launch', 'FIN-020', 'test-launch');
+        $this->assertTrue(app(Wallet::class)->admission($this->campaign->client_id, $snapshot)['allowed']);
+    }
+
+    public function test_answered_call_settles_once_and_unanswered_call_releases_its_hold(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Approved top-up', 'FIN-030', 'test-settle');
+
+        [$answered, $proof] = $this->attempt(60001);
+        $wallets->reserve($answered);
+        $this->assertSame(450, $wallet->refresh()->reserved_minor);
+        $this->assertSame(550, $wallet->available_minor);
+
+        $this->assertSame('rated', app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'private/wallet-settle'));
+        $wallet->refresh();
+        $this->assertSame(0, $wallet->reserved_minor);
+        // 1000 credited, 450 held, 450 released again and 60 charged for two billed minutes.
+        $this->assertSame(940, $wallet->available_minor);
+
+        $reservation = WalletReservation::where('call_attempt_id', $answered->id)->firstOrFail();
+        $this->assertSame('settled', $reservation->state);
+        $this->assertSame(60, $reservation->settled_minor);
+        $this->assertSame(0, $reservation->shortfall_minor);
+
+        $settlements = WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'settlement')->get();
+        $this->assertCount(1, $settlements);
+        $this->assertSame(390, $settlements->first()->available_delta_minor);
+        $this->assertSame(-450, $settlements->first()->reserved_delta_minor);
+
+        // Replays heal but never charge twice.
+        for ($replay = 0; $replay < 3; $replay++) {
+            $this->assertSame('rated', app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'private/wallet-settle'));
+        }
+        $this->assertSame(940, $wallet->refresh()->available_minor);
+        $this->assertSame(1, WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'settlement')->count());
+        $this->assertSame(1, CallRating::where('call_attempt_id', $answered->id)->count());
+
+        // A definitively unanswered call releases the hold and posts no usage charge.
+        $version = CampaignVersion::create([
+            'campaign_id' => $this->campaign->id, 'version' => 1,
+            'snapshot' => ['broadcast' => ['purpose' => 'Updates', 'retry_policy' => ['max_attempts' => 1, 'delay_seconds' => 60]]],
+            'approved_by' => $this->admin->id, 'approved_at' => now(),
+        ]);
+        $recipient = CampaignRecipient::create(['campaign_id' => $this->campaign->id, 'status' => 'reserved']);
+        $uuid = (string) Str::uuid();
+        $unanswered = CallAttempt::create([
+            'uuid' => $uuid, 'uniqueid' => $uuid, 'action_id' => 'vb-'.$uuid, 'campaign_recipient_id' => $recipient->id,
+            'campaign_version_id' => $version->id, 'attempt_no' => 1, 'state' => 'ringing', 'sent_at' => now()->subSeconds(30),
+            'tariff_snapshot' => app(Tariffs::class)->snapshot($this->client->id),
+        ]);
+        $wallets->reserve($unanswered);
+        $this->assertSame(450, $wallet->refresh()->reserved_minor);
+        $this->assertSame(490, $wallet->available_minor);
+
+        app(Engine::class)->terminal($unanswered, 'busy');
+
+        $wallet->refresh();
+        $this->assertSame(0, $wallet->reserved_minor);
+        $this->assertSame(940, $wallet->available_minor);
+        $released = WalletReservation::where('call_attempt_id', $unanswered->id)->firstOrFail();
+        $this->assertSame('released', $released->state);
+        $this->assertSame('Call ended without an answer: busy', $released->release_reason);
+        $this->assertSame(0, CallRating::where('call_attempt_id', $unanswered->id)->count());
+        $this->assertSame(0, WalletLedgerEntry::where('call_attempt_id', $unanswered->id)->where('type', 'settlement')->count());
+        $this->assertDatabaseHas('billing_exceptions', ['call_attempt_id' => $unanswered->id, 'issue' => 'timing_required']);
+        $this->assertTrue($wallets->verify($wallet)['available_match']);
+        $this->assertTrue($wallets->verify($wallet)['held_match']);
+    }
+
+    public function test_a_rated_charge_above_the_hold_is_recorded_as_a_shortfall_and_never_overdraws(): void
+    {
+        config()->set('billing.max_call_seconds', 60);
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '1.00', 'Tiny approved top-up', 'FIN-040', 'test-shortfall');
+
+        [$attempt, $proof] = $this->attempt(120000);
+        $wallets->reserve($attempt);
+        $this->assertSame(30, $wallet->refresh()->reserved_minor);
+        $this->assertSame(70, $wallet->available_minor);
+
+        // Drain the remaining credit while the call is in flight.
+        $wallets->post($this->admin, $wallet, 'adjustment', '-0.70', 'Reviewed mid-call debit', 'FIN-041', 'test-drain');
+        $this->assertSame(0, $wallet->refresh()->available_minor);
+
+        $this->assertSame('rated', app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'private/wallet-shortfall'));
+        $rating = CallRating::where('call_attempt_id', $attempt->id)->firstOrFail();
+        $this->assertSame(60, $rating->amount_minor);
+
+        $wallet->refresh();
+        $this->assertSame(0, $wallet->available_minor);
+        $this->assertSame(0, $wallet->reserved_minor);
+
+        $reservation = WalletReservation::where('call_attempt_id', $attempt->id)->firstOrFail();
+        $this->assertSame('settled', $reservation->state);
+        $this->assertSame(60, $reservation->settled_minor);
+        $this->assertSame(30, $reservation->shortfall_minor);
+        $this->assertDatabaseHas('billing_exceptions', ['call_attempt_id' => $attempt->id, 'issue' => 'wallet_shortfall']);
+        $shortfallLog = AuditLog::where('action', 'billing.wallet_shortfall')->firstOrFail();
+        $this->assertSame(30, $shortfallLog->details['shortfall_minor']);
+        $this->assertSame(30, $shortfallLog->details['paid_minor']);
+
+        // A repeated settlement of the same rating is a no-op.
+        $this->assertSame('duplicate', $wallets->settle(CallRating::where('call_attempt_id', $attempt->id)->firstOrFail()));
+        $this->assertSame(0, $wallet->refresh()->available_minor);
+        $this->assertSame(1, WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'settlement')->count());
+    }
+
+    public function test_stale_holds_expire_without_erasing_ledger_history(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Initial funding', 'FIN-200', 'expire-funding');
+        [$attempt] = $this->attempt();
+        $reservation = $wallets->reserve($attempt);
+        $this->assertSame(450, $wallet->refresh()->reserved_minor);
+
+        // A fresh hold keeps funding the call.
+        $this->assertSame(0, $wallets->expire(24));
+        $this->assertSame('held', $reservation->refresh()->state);
+
+        WalletReservation::whereKey($reservation->id)->update(['reserved_at' => now()->subHours(48)]);
+        $this->assertSame(1, $wallets->expire(24));
+        $wallet->refresh();
+        $this->assertSame(1000, $wallet->available_minor);
+        $this->assertSame(0, $wallet->reserved_minor);
+        $reservation->refresh();
+        $this->assertSame('released', $reservation->state);
+        $this->assertStringContainsString('expired', $reservation->release_reason);
+        $release = WalletLedgerEntry::where('wallet_reservation_id', $reservation->id)->where('type', 'release')->firstOrFail();
+        $this->assertSame(450, $release->available_delta_minor);
+
+        // Expiry is idempotent and appends history instead of rewriting it.
+        $this->assertSame(0, $wallets->expire(24));
+        $this->assertSame(1, WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'release')->count());
+        $this->assertSame('billing:release:'.$attempt->id, $release->idempotency_key);
+
+        $this->artisan('billing:wallet-expire', ['--actor' => $this->member->id])->expectsOutputToContain('A billing administrator is required.')->assertFailed();
+        $this->artisan('billing:wallet-expire', ['--actor' => $this->admin->id])->expectsOutputToContain('Released 0 stale wallet hold(s)')->assertSuccessful();
+    }
+
+    public function test_wallet_console_enforces_permissions_and_tenancy(): void
+    {
+        $other = app(Accounts::class)->create($this->admin, 'Other customer');
+        app(Accounts::class)->status($this->admin, $other, 'active', 'Ready');
+        $otherWallet = app(Wallet::class)->open($this->admin, $other, 'GHS', 2, 'Approved onboarding');
+        $foreign = app(Wallet::class)->post($this->admin, $otherWallet, 'funding', '9.99', 'Other tenant funding', 'FIN-100', 'test-foreign');
+
+        $this->actingAs($this->member)->get('/billing/wallets')->assertForbidden();
+        $this->actingAs($this->member)->get('/billing/wallets/'.$this->client->id)->assertForbidden();
+        $this->actingAs($this->member)->post(route('billing.wallets.open', $this->client), ['currency' => 'GHS', 'minor_unit_scale' => 2, 'reason' => 'Attempted self service'])->assertForbidden();
+
+        $this->actingAs($this->admin)->get('/billing/wallets')->assertOk()->assertSee($this->client->name)->assertSee('Open wallet');
+        $this->get('/billing/wallets/'.$this->client->id)->assertOk()->assertSee('Open wallet');
+        $this->get('/billing/wallets/'.$other->id)->assertOk()->assertSee('9.99');
+
+        $this->post(route('billing.wallets.open', $this->client), ['currency' => 'GHS', 'minor_unit_scale' => 2, 'reason' => 'Approved onboarding'])->assertRedirect();
+        $this->get('/billing/wallets/'.$this->client->id)->assertOk()->assertSee('Post approved entry');
+
+        $this->post(route('billing.wallets.post', $this->client), ['kind' => 'funding', 'amount' => '25.00', 'reason' => 'Top-up', 'approval' => ''])->assertSessionHasErrors('approval');
+        $this->post(route('billing.wallets.post', $this->client), ['kind' => 'funding', 'amount' => '25.00', 'reason' => 'Top-up', 'approval' => 'FIN-101'])->assertRedirect();
+        $wallet = $this->client->fresh()->wallet;
+        $this->assertSame(2500, $wallet->available_minor);
+
+        // A wallet entry belonging to another tenant can never be reversed through this client.
+        $this->post(route('billing.wallets.reverse', [$this->client, $foreign]), ['reason' => 'Cross-tenant attempt', 'approval' => 'FIN-102'])->assertNotFound();
+        $this->assertSame(999, $otherWallet->refresh()->available_minor);
+
+        $own = WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'funding')->firstOrFail();
+        $this->post(route('billing.wallets.reverse', [$this->client, $own]), ['reason' => 'Returned to payer', 'approval' => 'FIN-103'])->assertRedirect();
+        $this->assertSame(0, $wallet->refresh()->available_minor);
+        $this->get('/billing/wallets/'.$this->client->id)->assertOk()->assertSee('Returned to payer');
+
+        // The client portal shows its own credit read-only and never another tenant's activity.
+        $this->actingAs($this->member)->get('/dashboard')->assertOk()->assertSee('Calling credit')->assertSee('Available credit')->assertSee('Funding')->assertDontSee('9.99')->assertDontSee('Other customer');
+    }
+}

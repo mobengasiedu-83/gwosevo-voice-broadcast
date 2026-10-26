@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\ContactImport;
+use App\Models\WalletLedgerEntry;
 use App\Services\Clients\Tenancy;
 use App\Services\Dashboard\Metrics;
 use App\Services\Dashboard\Scope;
@@ -28,11 +29,16 @@ class ClientDashboardController extends Controller
             abort_unless((clone $campaigns)->whereKey($filters['campaign_id'])->exists(), 403);
         }
         $clientId = $membership->client_id;
+        $wallet = $membership->client->wallet;
         $data = $metrics->overview($request->user(), $filters);
         $data += [
             'client' => $membership->client,
             'membership' => $membership,
             'filters' => $filters,
+            'wallet' => $wallet,
+            // Read-only history: clients see their own charges and holds, never another tenant's.
+            'wallet_entries' => $wallet ? WalletLedgerEntry::where('wallet_id', $wallet->id)->orderByDesc('id')->limit(5)
+                ->get(['id', 'type', 'available_delta_minor', 'reserved_delta_minor', 'available_after_minor', 'reserved_after_minor', 'currency', 'minor_unit_scale', 'reason', 'created_at']) : collect(),
             'totals' => [
                 'campaigns' => (clone $campaigns)->count(),
                 'contacts' => Contact::where('client_id', $clientId)->count(),

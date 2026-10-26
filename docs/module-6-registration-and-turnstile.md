@@ -50,6 +50,16 @@ Email uses the configured Laravel mailer. Direct log/array mail delivery is refu
 
 The TxtConnect adapter follows the provider's [POST API documentation](https://txtconnect.net/ApiDocumentation): bearer authentication, `to`, `from`, `unicode` and `sms` fields, and successful provider status `000` with `in_error=false`. Provider acceptance is not treated as contact verification; the recipient must enter the code.
 
+## Diagnosing a missing verification SMS
+
+Registration deliberately hides whether a contact is already in use, so "no code arrived" has three distinct causes. Check them in this order:
+
+1. **The code was never requested from the provider.** `php artisan identity:sms-test 0531005130` sends one test message through the same settings the application uses. `TxtConnect accepted the SMS ... Message id: ...` confirms the endpoint, token and sender. A failure prints the reason and records an `identity.sms_failed` log entry.
+2. **Delivery was suppressed on purpose.** A `register` request whose email *or* mobile number already belongs to an account receives the generic response without any provider call. The `identity.otp_suppressed` log entry records `purpose`, `channel`, `reason=duplicate_contact` and a hashed identifier. Those people must sign in instead of registering again. Administrator-provisioned client users get no notification either (the client user form states this) and finish activation by signing in and verifying the code sent to the contact they choose.
+3. **The provider rejected the send.** Registration then fails with "Verification delivery is unavailable", the challenge is consumed immediately and the `identity.sms_failed` entry holds `http_status`, `provider_code` and `provider_message`. Accepted sends write `identity.sms_accepted` with the provider `message_id` for tracing in the TxtConnect dashboard.
+
+TxtConnect answers `000` for every submission it accepts, including numbers it cannot deliver to, so handset confirmation and the provider dashboard remain the only proof of delivery. Logs never contain the verification code, the message body or the token; identifiers appear only as SHA-256 hashes.
+
 ## Cloudflare Turnstile setup
 
 Turnstile is implemented on login, registration, recovery, code verification/resend, password setup and contact-change submissions. Each submission is validated against Cloudflare Siteverify on the server, including the expected action and an allowed hostname. Network failures, missing keys, invalid responses and used tokens fail closed when enabled. Successful tokens also receive a short-lived local replay marker in the shared cache.

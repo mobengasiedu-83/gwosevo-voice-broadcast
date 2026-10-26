@@ -1,0 +1,60 @@
+# Module 13 calling wallet
+
+Implemented against the 26 October 2026 Module 13 guide. Calling credit is prepaid: Finance opens a wallet, posts approved funding, and each billable call is admitted only against credit that is already held. Prices still come exclusively from approved Module 12 tariffs; this module adds no pricing policy and no automatic top-ups.
+
+## Balances, holds and ledger
+
+`wallets` holds one account per client with a three-letter currency, a minor-unit scale and integer `available_minor`/`reserved_minor` balances. Amounts are never floats. `Wallet::amount()` renders a decimal string for display and `Wallet::parse()` rejects over-precision, zero and oversized input, so a posted amount always matches the stored integer exactly.
+
+`wallet_reservations` is unique per `call_attempt_id`. A hold covers the maximum possible charge for one attempt: `ceil(BILLING_MAX_CALL_SECONDS / 60)` billed minutes at the attempt's frozen tariff rate. The default `BILLING_MAX_CALL_SECONDS=900` therefore holds fifteen minutes; at an approved rate of 30 minor units per minute the hold is 450 minor units. Values outside 60–86,400 seconds are rejected rather than silently clamped.
+
+`wallet_ledger_entries` is append-only. Every balance movement appends exactly one entry carrying type (`funding`, `adjustment`, `reservation`, `release`, `settlement`, `reversal`), signed available/reserved deltas, resulting balances, currency, scale, reason, approval reference, actor, optional attempt/reservation links, an idempotency key and an optional `reversal_of_id`. Keys are unique: `billing:reservation:{attempt}`, `billing:release:{attempt}`, `billing:settlement:{attempt}`, `billing:reversal:{entry}` and admin-supplied or `admin:{uuid}` for funding. Replaying the same request returns the original entry; reusing a key against another wallet is rejected. The migration's `down()` refuses to drop financial history.
+
+## Admission and fail-closed origination
+
+Admission is evaluated before origination and refuses with one of `wallet_missing`, `tariff_missing`, `tariff_not_priced`, `currency_mismatch` or `insufficient_credit`. Accounts without a wallet are "not applicable": they keep the previous manual/unpriced behaviour until Finance opens one, so enabling this module does not retroactively block existing clients.
+
+A wallet-backed account must have a tariff snapshot whose currency and scale match the wallet, a priceable rate and available credit at least equal to one full hold. The engine reserves credit inside a locked transaction immediately after creating the attempt; if the reservation fails, the attempt is not originated and the decline is surfaced to the operator. Accounts without enough credit for one full call cannot start or continue a campaign.
+
+A duplicate reserve for the same attempt returns the existing hold instead of holding twice. An attempt whose reservation was already released or settled can never be reserved again.
+
+## Settlement, release and shortfall
+
+Module 12 ratings settle the wallet exactly once. Settlement releases the hold back to available credit, then debits `min(charge, available)`. A charge above the hold is still applied in full when credit allows; any uncovered remainder is recorded on the reservation as `shortfall_minor`, raised as a `wallet_shortfall` billing exception and written to the audit log with charge, paid and shortfall amounts. Nothing is silently forgiven and no negative balance is ever created.
+
+Replays and resubmitted evidence never double-charge. A rating whose attempt predates the wallet returns `no_reservation` and leaves history untouched. A rating whose currency does not match the wallet is held for review rather than converted.
+
+Definitively unanswered attempts (no answer, busy, failed) release the hold with the outcome recorded as the release reason and no usage charge. Attempts still awaiting trusted rating evidence keep their hold, because the charge is unknown; `billing:wallet-expire` is the reviewed backstop for holds that never receive final evidence. It releases only holds older than the requested age (default 24 hours, maximum 720) whose attempt has no final rating, and it appends the same `release` entry, so it is idempotent. Expiry never writes off a charge: a later settlement still debits available credit and raises a shortfall exception if the credit has since been used.
+
+## Administration and visibility
+
+`billing:wallet-open`, `billing:wallet-adjust`, `billing:wallet-show` and `billing:wallet-expire` require `--actor` with `billing.manage` (seeded for Super Administrator). `billing:wallet-adjust` takes `--kind=funding|adjustment`, `--amount`, `--reason`, `--approval` and optional `--key`; funding must be positive, and a debit larger than available credit is refused in favour of a reviewed receivable. `billing:wallet-show` prints stored balances, ledger sums and held reservations, and exits unsuccessfully when they do not reconcile, so it can gate monitoring.
+
+`/billing/wallets` and `/billing/wallets/{client}` are restricted to `billing.manage`, are marked `private, no-store`, and show the ledger, holds, reversal state and an on-page reconciliation verdict. Only funding and adjustment entries can be reversed, an entry can be reversed once, and a reversal is a new entry with its own approval reference. Settlements are corrected with a reviewed adjustment referencing the attempt, never by editing history. Clients see their own credit and recent entries read-only on the dashboard and can never reach the admin console or another tenant's wallet.
+
+## Deploying
+
+Deploy code, migrate, seed the permission, then restart long-running gateway/workers through the normal service process:
+
+```sh
+php artisan migrate --force
+php artisan db:seed --class=RolesAndPermissionsSeeder --force
+php artisan optimize:clear
+```
+
+The migration only creates the three wallet tables. It does not open wallets, post funding, assign tariffs or change dispatch behaviour. Rollback requires a reviewed archival migration.
+
+After Finance approval:
+
+```sh
+php artisan billing:wallet-open CLIENT_ID --currency=GHS --scale=2 --reason="Approved prepaid onboarding" --actor=ADMIN_ID
+php artisan billing:wallet-adjust CLIENT_ID --kind=funding --amount=250.00 --reason="Approved prepaid top-up" --approval="FIN-REFERENCE" --actor=ADMIN_ID
+php artisan billing:wallet-show CLIENT_ID --actor=ADMIN_ID
+php artisan billing:wallet-expire --hours=24 --actor=ADMIN_ID
+```
+
+## Validation and remaining acceptance
+
+Tests cover exact minor-unit funding, idempotent replay, cross-wallet key rejection, over-debit refusal, reversal permitted once and only for funding/adjustment, permission and tenancy denial, admission refusal without wallet/tariff/match/credit, launch blocking while unfunded, held-credit arithmetic, reserve fail-closed and duplicate holds, settle-once with replay, unanswered release, shortfall exception and audit, stale-hold expiry with idempotent ledger append, and read-only client visibility. The Module 12 rating, campaign, gateway and audio suites remain regression coverage.
+
+Local schema installation and permission seeding are separate from production deployment. No production currency, tariff, funding, approval reference or `BILLING_MAX_CALL_SECONDS` value was configured here; confirm the maximum billable call duration with Finance before enabling wallet-backed campaigns. Prepaid invoicing/receipting, payment-gateway top-ups and Finance's shortfall recovery process remain external release gates.
