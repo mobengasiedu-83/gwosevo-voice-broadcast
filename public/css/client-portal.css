@@ -6,3 +6,90 @@
 .client-portal article+article{margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
 @media(max-width:800px){.client-account-full{display:none}.client-account-compact{display:inline}.client-portal .portal-heading>span{display:none}.client-portal .topbar{gap:8px;padding-inline:12px}.client-portal .top-tools{gap:10px}.client-portal .menu-toggle{margin-right:0}.client-portal .portal-heading>strong{font-size:12px}.client-portal .theme-toggle{padding-inline:8px}}
 @media(max-width:380px){.client-portal .portal-heading{display:none}.client-portal .top-tools{margin-left:auto}}
+
+.client-summary-cards{grid-template-columns:repeat(5,minmax(0,1fr))}
+.client-summary-cards .kpi{min-width:0}
+.client-summary-cards .kpi>strong{overflow-wrap:anywhere}
+.client-summary-cards details{margin-top:10px;color:var(--muted);font-size:11px;line-height:1.6}
+.client-summary-cards summary{cursor:pointer}
+.client-summary-cards details p{margin-top:8px}
+@media(max-width:1200px){.client-summary-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:800px){.client-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.client-summary-cards{grid-template-columns:1fr}}
+
+.client-dashboard-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-block:24px}
+.workspace-page main .client-dashboard-panels>section{margin:0;min-width:0;height:100%}
+.workspace-page main .client-dashboard-panels table{display:table;width:100%;margin-top:18px}
+@media(max-width:800px){.client-dashboard-panels{grid-template-columns:1fr}}
+
+.client-portal #sidebar nav{display:block}
+.client-nav-group{margin:6px 0}
+.client-portal #sidebar .client-nav-group>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;padding:11px 12px;border-radius:10px;color:#bdcce3;font-size:13px;font-weight:600}
+.client-nav-group>summary::-webkit-details-marker{display:none}
+.client-portal #sidebar .client-nav-group>summary:hover,.client-portal #sidebar .client-nav-group[data-active]>summary{background:#1e2c4b;color:#fff}
+.client-nav-chevron{font-size:20px;line-height:1;transition:transform .15s}
+.client-nav-group[open] .client-nav-chevron{transform:rotate(90deg)}
+.client-nav-submenu{margin:5px 0 10px 20px;padding-left:10px;border-left:1px solid #30415f}
+html[data-portal-design] #sidebar .client-nav-submenu .nav-item{font-size:12px;padding:9px 10px}
+
+/* Client portal: indigo, mint and warm amber accents. */
+.client-portal{background:radial-gradient(ellipse at 100% 0,color-mix(in srgb,#818cf8 9%,transparent),transparent 55%),var(--bg)}
+html[data-portal-design] .client-portal aside#sidebar{background:radial-gradient(ellipse at 0 0,#34357a,transparent 55%),linear-gradient(170deg,#152344,#101a32 75%)}
+.client-portal #sidebar .brand{border-bottom-color:#ffffff20;position:relative;padding-left:15px}
+.client-portal #sidebar .brand::before{content:"";position:absolute;left:0;top:10px;width:5px;height:38px;background:linear-gradient(#a5b4fc,#5eead4);border-radius:8px}
+html[data-portal-design] .client-portal #sidebar .nav-item.active{background:linear-gradient(110deg,#5558bd,#394b85);box-shadow:inset 3px 0 #9ef0df}
+.client-portal .nav-item,.client-portal .client-nav-group>summary{transition:background .2s,transform .2s}
+.client-portal #sidebar a.nav-item:hover{transform:translateX(3px)}
+.client-welcome{position:relative;isolation:isolate;display:flex;align-items:center;justify-content:space-between;overflow:hidden;border-radius:22px;padding:30px 34px;margin-bottom:24px;background:linear-gradient(115deg,#293c8d,#5147a8 65%,#6551b8);color:#fff;box-shadow:0 12px 32px #28276720}
+.client-welcome::before{content:"";position:absolute;z-index:-1;inset:0;background:radial-gradient(circle at 64% 10%,#b2a8ff30,transparent 44%)}
+.client-welcome h1{color:#fff;margin:12px 0 8px;font-size:32px}
+.client-eyebrow{color:#bbf7e8;letter-spacing:2px;font-size:10px;font-weight:800}
+.client-welcome-copy{position:relative;z-index:1;max-width:65%}
+.client-welcome-copy>p{color:#e0e7ff;font-size:12px;margin:8px 0}
+.client-welcome-copy .client-welcome-message{font-size:16px;margin:15px 0 20px;color:#fff}
+.client-portal .client-welcome .button{background:#fff;color:#35418b;border-color:#fff;gap:20px;box-shadow:0 5px 15px #17245a30}
+.client-welcome-art{width:36%;max-width:340px;height:auto;margin:-25px -5px -25px 10px;animation:client-float 6s ease-in-out infinite}
+.client-portal .client-summary-cards .kpi{position:relative;overflow:hidden;border-top:3px solid var(--card-accent,#818cf8);background:linear-gradient(135deg,color-mix(in srgb,var(--card-accent,#818cf8) 7%,var(--panel)),var(--panel));transition:transform .2s,box-shadow .2s;animation:client-enter .5s ease-out both}
+.client-summary-cards .kpi:nth-child(2){--card-accent:#2bb8a0;animation-delay:40ms}
+.client-summary-cards .kpi:nth-child(3){--card-accent:#6e9df5;animation-delay:80ms}
+.client-summary-cards .kpi:nth-child(4){--card-accent:#d99547;animation-delay:120ms}
+.client-summary-cards .kpi:nth-child(5){--card-accent:#ad7ce5;animation-delay:160ms}
+.client-summary-cards .kpi::after{content:"";position:absolute;width:65px;height:65px;border:14px solid color-mix(in srgb,var(--card-accent,#818cf8) 10%,transparent);border-radius:50%;right:-20px;top:-20px;pointer-events:none}
+.client-portal .client-summary-cards .kpi:hover{transform:translateY(-4px);box-shadow:0 10px 24px #151d4912}
+.client-portal.workspace-page main section{box-shadow:0 4px 20px #19234905;border-radius:16px}
+.client-portal.workspace-page main section>h2{display:flex;align-items:center;gap:10px}
+.client-portal.workspace-page main section>h2::before{content:"";display:block;flex-shrink:0;width:5px;height:17px;border-radius:5px;background:linear-gradient(#818cf8,#5ecdb7)}
+.client-portal.workspace-page main .client-get-started{border-color:color-mix(in srgb,#5ecdb7 40%,var(--border));background:linear-gradient(110deg,color-mix(in srgb,#5ecdb7 8%,var(--panel)),var(--panel))}
+.client-portal .button{transition:transform .2s,box-shadow .2s}
+.client-portal .button:hover{transform:translateY(-2px);box-shadow:0 5px 15px #353c8a20}
+@keyframes client-float{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}
+@keyframes client-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:800px){.client-welcome{padding:24px}.client-welcome h1{font-size:27px}.client-welcome-copy{max-width:70%}.client-welcome-art{width:34%;margin-right:-25px}.client-welcome-copy .client-welcome-message{font-size:14px}}
+@media(max-width:480px){.client-welcome{padding:24px 20px}.client-welcome-copy{max-width:100%}.client-welcome-art{display:none}.client-eyebrow{font-size:9px}.client-welcome h1{font-size:26px}}
+@media(prefers-reduced-motion:reduce){.client-portal *,.client-portal *::before,.client-portal *::after{animation:none!important;transition:none!important}}
+
+/* Shared illustrated accent on every client workspace page. */
+.client-page-banner{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:152px;padding:22px 28px;margin:0 0 26px;border-radius:18px;background:linear-gradient(115deg,#293c8d,#6551b8);color:white;overflow:hidden;box-shadow:0 10px 25px #29275a16;animation:client-enter .45s ease-out both}
+.client-page-banner>div{min-width:0}
+.client-page-banner p{font-size:20px;font-weight:650;margin:8px 0 12px;line-height:1.35}
+.workspace-page main .client-page-banner a{color:#c4f7e9;font-size:12px;font-weight:650;display:inline-block}
+.client-page-banner img{width:200px;height:117px;object-fit:contain;animation:client-float 6s ease-in-out 3;flex-shrink:0}
+.client-portal main>h2{position:relative;margin-top:0;line-height:1.35}
+.client-portal .kpi:not(.client-summary-cards .kpi){border-top:3px solid #818cf8;background:linear-gradient(135deg,color-mix(in srgb,#818cf8 6%,var(--panel)),var(--panel))}
+.client-portal .module-tabs a,.client-portal .flow-steps a{border-radius:10px;background:color-mix(in srgb,#818cf8 5%,var(--panel));border-color:var(--border);transition:background .2s,transform .2s}
+.client-portal .module-tabs a:hover,.client-portal .flow-steps a:hover{background:color-mix(in srgb,#818cf8 14%,var(--panel));transform:translateY(-2px)}
+.client-portal .flow-node{border-color:color-mix(in srgb,#818cf8 35%,var(--border));border-top:3px solid #818cf8;border-radius:12px;background:color-mix(in srgb,#818cf8 6%,var(--panel))}
+.client-portal .flow-node:nth-child(2n){border-top-color:#5ecdb7}
+.client-portal .guide-contents{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:10px;margin:20px 0}
+.client-portal .guide-contents a{padding:9px 14px;border:1px solid var(--border);background:var(--panel);border-radius:20px;font-size:12px}
+.client-portal .guide-contents a:hover{background:color-mix(in srgb,#818cf8 12%,var(--panel))}
+.client-portal [id^=guide-]{scroll-margin-top:100px}
+.guide-steps{display:grid;gap:16px;margin:20px 0;padding-left:24px;color:var(--muted);line-height:1.8;font-size:13px}
+.guide-steps li{padding-left:8px}.guide-steps li::marker{color:var(--blue);font-weight:800}.guide-steps strong{color:var(--ink)}
+@media(max-width:650px){.client-page-banner{padding:20px;min-height:130px}.client-page-banner p{font-size:16px}.client-page-banner img{width:115px;height:85px}.client-page-banner .client-eyebrow{font-size:8px;letter-spacing:1px}}
+@media(max-width:380px){.client-page-banner img{display:none}}
+@media(prefers-reduced-motion:reduce){.client-portal *,.client-portal *::before,.client-portal *::after{animation:none!important;transition:none!important}}
+
+.client-portal #sidebar nav{display:flex;flex-direction:column;flex:1;min-height:min-content}
+.client-sidebar-help{margin-top:auto;padding-top:24px}
+.client-sidebar-help .nav-item{border-top:1px solid #ffffff20;justify-content:space-between}

@@ -112,6 +112,7 @@ Route::post('/set-password', [IdentityController::class, 'setPassword'])->middle
 */
 
 Route::middleware('auth')->group(function () {
+    Route::get('/account/guide', \App\Http\Controllers\ClientGuideController::class)->name('account.guide');
     Route::get('/account/security', [IdentityController::class, 'security'])->name('account.security');
     Route::post('/account/security/contact', [IdentityController::class, 'changeContact'])->middleware(['throttle:5,1', VerifyTurnstile::class.':identity'])->name('account.contact');
     Route::post('/logout', [SessionController::class, 'destroy'])

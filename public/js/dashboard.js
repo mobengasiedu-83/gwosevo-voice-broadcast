@@ -1,7 +1,13 @@
 (() => {
  const menu=document.getElementById('menu-toggle');menu?.addEventListener('click',()=>{const open=menu.getAttribute('aria-expanded')!=='true';menu.setAttribute('aria-expanded',String(open));document.body.classList.toggle('nav-open',open);});
  document.addEventListener('keydown',event=>{if(event.key==='Escape'){menu?.setAttribute('aria-expanded','false');document.body.classList.remove('nav-open');}});
-  document.querySelectorAll('#sidebar .nav-group').forEach(group=>group.addEventListener('toggle',()=>{if(group.open)document.querySelectorAll('#sidebar .nav-group[open]').forEach(other=>{if(other!==group)other.open=false;});}));
+ const navGroups=[...document.querySelectorAll('#sidebar .nav-group, #sidebar .client-nav-group')];
+ const activeGroup=navGroups.find(group=>group.dataset.active==='true'||group.querySelector('[aria-current="page"], .selected, summary.active'));
+ // Start with only the current page's menu expanded; previous menus are no longer in use.
+ navGroups.forEach(group=>{group.open=group===activeGroup;group.setAttribute('name','sidebar-navigation');});
+ navGroups.forEach(group=>group.addEventListener('toggle',()=>{
+  if(group.open)navGroups.forEach(other=>{if(other!==group)other.open=false;});
+ }));
  const panel=document.getElementById('dashboard-panel'),refresh=document.getElementById('refresh-now'),status=document.getElementById('refresh-status');let busy=false,last=Date.now(),failed=false;
  function elapsed(){document.querySelectorAll('[data-elapsed]').forEach(el=>{const age=Math.max(0,Math.floor((Date.now()-Date.parse(el.dataset.elapsed))/1000));if(Number.isFinite(age))el.textContent=age>=3600?`${Math.floor(age/3600)}h ${Math.floor(age%3600/60)}m`:`${Math.floor(age/60)}m ${age%60}s`;});if(status&&!busy){const age=Math.floor((Date.now()-last)/1000);status.textContent=failed?'Updates unavailable · data retained':`Updated ${age}s ago`;status.classList.toggle('stale',failed||age>30);}}
  async function update(){if(!panel||busy||document.hidden)return;const focused=document.activeElement;if(panel.contains(focused)&&focused.matches('input,textarea,select,button'))return;busy=true;refresh.disabled=true;status.textContent='Refreshing…';const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),10000);try{const response=await fetch(location.href,{headers:{Accept:'application/json'},cache:'no-store',signal:abort.signal});if(response.redirected||response.status===401){location.assign('/login');return;}if(!response.ok)throw Error('Refresh unavailable');const data=await response.json();if(typeof data.html!=='string')throw Error('Invalid response');panel.innerHTML=data.html;last=Date.now();failed=false;}catch(error){failed=true;}finally{clearTimeout(timer);busy=false;refresh.disabled=false;elapsed();}}

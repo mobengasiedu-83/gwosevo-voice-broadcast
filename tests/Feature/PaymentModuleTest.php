@@ -111,6 +111,26 @@ class PaymentModuleTest extends TestCase
         ], $raw);
     }
 
+    public function test_ghs_topups_require_ten_cedis_and_accept_custom_amounts(): void
+    {
+        $this->fakeProvider();
+        // The legacy minimum must not allow payments below the business minimum.
+        config()->set('payments.min_amount_minor', 100);
+        $this->actingAs($this->member)->get(route('wallet.payments.index'))
+            ->assertOk()->assertSee('10.00 GHS');
+        foreach (['0.01', '9.99'] as $amount) {
+            $this->postJson(route('wallet.payments.store'), [
+                'amount' => $amount, 'request_key' => (string) Str::uuid(),
+            ])->assertUnprocessable()->assertJsonValidationErrors('amount');
+        }
+        Http::assertNothingSent();
+        $this->assertSame(0, PaymentIntent::count());
+        foreach (['10.00' => 1000, '12.37' => 1237] as $amount => $minor) {
+            $intent = $this->initiate($amount);
+            $this->assertSame($minor, $intent->amount_minor);
+        }
+    }
+
     public function test_client_can_initiate_a_topup_idempotently_and_is_redirected_to_checkout(): void
     {
         $this->fakeProvider();

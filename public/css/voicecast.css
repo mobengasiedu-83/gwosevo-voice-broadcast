@@ -18,3 +18,33 @@ main{max-width:1500px;padding:28px 32px 40px}.breadcrumb{font-size:11px;margin-b
 @media(max-width:800px){.topbar{margin-left:0;padding:0 16px;gap:12px}.app-shell{padding-left:0}.portal-heading{margin-right:auto}.portal-heading>strong{font-size:14px}html[data-portal-design] aside#sidebar{transform:translateX(-100%);transition:transform .2s ease}html[data-portal-design] .nav-open aside#sidebar{transform:translateX(0);inset:75px auto 0 0;height:calc(100svh - 75px)}.menu-toggle,.workspace-page .menu-toggle{display:block}.top-tools{gap:12px}main{padding:22px 16px}.page-heading{flex-direction:column;gap:16px}.two-col,.health-grid{grid-template-columns:1fr}.dropdown{width:min(300px,calc(100vw - 32px))}}
 @media(max-width:480px){.kpi-grid{gap:9px}.kpi{padding:12px}.kpi>strong{font-size:23px}.kpi>div{font-size:11px}.metric-icon{display:none}.panel{padding:15px}.content-footer{gap:12px;flex-wrap:wrap}.theme-toggle{font-size:10px;padding:7px}.portal-heading>strong{font-size:12px}}
 @media(prefers-reduced-motion:reduce){html[data-portal-design] aside#sidebar{transition:none}}
+
+/* Admin navigation groups share the sidebar accordion behavior. */
+#sidebar .admin-nav-group{margin:5px 0}
+#sidebar .admin-nav-group>summary{display:flex;justify-content:space-between;list-style:none;cursor:pointer;font-weight:650}
+#sidebar .admin-nav-group>summary::-webkit-details-marker{display:none}
+#sidebar .admin-nav-group[data-active]>summary{color:#fff;background:#1e2c4b}
+#sidebar .admin-nav-chevron{font-size:20px;line-height:1;transition:transform .15s}
+#sidebar .admin-nav-group[open] .admin-nav-chevron{transform:rotate(90deg)}
+#sidebar .admin-nav-group .subnav{margin:6px 0 12px 18px;padding-left:10px;gap:3px}
+html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item{font-size:12px;padding:8px 10px}
+@media(prefers-reduced-motion:reduce){#sidebar .admin-nav-chevron{transition:none}}
+
+/* Separate label, icon and disclosure sizing: generic nav-item spans are icons. */
+html[data-portal-design] #sidebar .admin-nav-group>summary{display:grid;grid-template-columns:18px minmax(0,1fr) 14px;align-items:center;gap:11px;min-height:44px;padding:11px 12px;font-size:13px;line-height:1.4;font-weight:600;border:1px solid transparent;border-radius:10px;transition:background .18s,border-color .18s}
+#sidebar .admin-nav-group>summary .admin-nav-label{display:block;width:auto;min-width:0;text-align:left;font-size:13px;line-height:1.4;font-weight:600;white-space:normal;overflow-wrap:normal}
+#sidebar .admin-nav-icon{display:block;width:18px;height:18px;color:#91a9d1}
+#sidebar .admin-nav-group>summary .admin-nav-chevron{display:block;width:14px;height:14px;font-size:inherit;flex-shrink:0;color:#93a7c6;transition:transform .18s}
+html[data-portal-design] #sidebar .admin-nav-group>summary:hover{background:#ffffff09;border-color:#ffffff0c;color:#fff}
+html[data-portal-design] #sidebar .admin-nav-group[data-active]>summary{background:linear-gradient(110deg,#26365b,#1d2d4b);border-color:#91b1ff20;color:#eef3ff}
+#sidebar .admin-nav-group[data-active] .admin-nav-icon{color:#a9bfff}
+#sidebar .admin-nav-group .subnav{margin:6px 0 10px 20px;padding-left:12px;border-left:1px solid #42567b80;gap:3px}
+html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item{position:relative;margin:0;padding:9px 12px;min-height:36px;font-size:12px;line-height:1.5;border-radius:8px;color:#aebed7}
+html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item.active{background:#7295ff1c;color:#d8e4ff;box-shadow:inset 3px 0 #88a6ff;font-weight:650}
+html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item:hover{background:#ffffff09;color:#fff}
+#sidebar:has(.admin-nav-group){scrollbar-width:thin;scrollbar-color:#354766 #101c34}
+#sidebar:has(.admin-nav-group) .brand{white-space:normal;font-size:19px;line-height:1.4;letter-spacing:-.5px}
+#sidebar:has(.admin-nav-group) .brand>span:last-child{min-width:0}
+#sidebar:has(.admin-nav-group) .brand small{font-size:10px;margin-top:6px}
+#sidebar:has(.admin-nav-group) .nav-eyebrow{font-size:9px;letter-spacing:1.7px;margin-top:12px}
+@media(prefers-reduced-motion:reduce){html[data-portal-design] #sidebar .admin-nav-group>summary,#sidebar .admin-nav-group>summary .admin-nav-chevron{transition:none}}

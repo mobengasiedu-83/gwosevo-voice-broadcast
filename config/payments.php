@@ -11,14 +11,14 @@ return [
     | fees, refund process and webhook signature scheme in provider UAT.
     |
     | Amount limits are integer minor units. For a GHS wallet with scale 2,
-    | 100 means GHS 1.00 and 1000000 means GHS 10,000.00.
+    | 1000 means GHS 10.00 and 1000000 means GHS 10,000.00.
     |
     */
     'enabled' => (bool) env('PAYMENT_TOPUPS_ENABLED', false),
 
     'provider' => env('PAYMENT_PROVIDER', 'xcel'),
 
-    'min_amount_minor' => (int) env('PAYMENT_MIN_AMOUNT_MINOR', 100),
+    'min_amount_minor' => (int) env('PAYMENT_MIN_AMOUNT_MINOR', 1000),
     'max_amount_minor' => (int) env('PAYMENT_MAX_AMOUNT_MINOR', 1000000),
     'pending_ttl_minutes' => (int) env('PAYMENT_PENDING_TTL_MINUTES', 30),
 

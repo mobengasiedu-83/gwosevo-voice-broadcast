@@ -1,0 +1,48 @@
+/* Shared form controls for client, administration and sign-in screens. */
+:root{--control-height:44px;--control-radius:10px}
+:is(.workspace-page,.dashboard-page) main{display:flow-root}
+:is(.workspace-page,.dashboard-page) main form{display:flex;flex-wrap:wrap;gap:20px 18px;align-items:flex-end;margin:18px 0}
+:is(.workspace-page,.dashboard-page) main form>label{display:flex;flex-direction:column;flex:1 1 240px;max-width:100%;min-width:0}
+:is(.workspace-page,.dashboard-page) main label,.identity-page label{font-size:12px;font-weight:600;line-height:1.6;gap:8px;color:var(--muted)}
+:is(.workspace-page,.dashboard-page) main input:not([type=checkbox]):not([type=radio]):not([type=hidden]),:is(.workspace-page,.dashboard-page) main select,:is(.workspace-page,.dashboard-page) main textarea,.identity-page input:not([type=checkbox]):not([type=radio]){min-height:var(--control-height);border-radius:var(--control-radius);padding:11px 13px;border:1px solid color-mix(in srgb,var(--muted) 42%,var(--border));background:var(--panel);color:var(--ink);font-size:13px;line-height:1.5;transition:border-color .18s,box-shadow .18s;box-sizing:border-box}
+:is(.workspace-page,.dashboard-page) main textarea{min-height:120px;resize:vertical}
+:is(.workspace-page,.dashboard-page) main input::placeholder,:is(.workspace-page,.dashboard-page) main textarea::placeholder{color:var(--muted);opacity:.75;font-weight:400}
+:is(.workspace-page,.dashboard-page) main input:focus-visible,:is(.workspace-page,.dashboard-page) main select:focus-visible,:is(.workspace-page,.dashboard-page) main textarea:focus-visible,.identity-page input:focus-visible{outline:2px solid var(--blue);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 12%,transparent);border-color:var(--blue)}
+:is(.workspace-page,.dashboard-page) main input[aria-invalid=true],:is(.workspace-page,.dashboard-page) main textarea[aria-invalid=true],:is(.workspace-page,.dashboard-page) main select[aria-invalid=true]{border-color:#dc6684}
+:is(.workspace-page,.dashboard-page) main input:disabled,:is(.workspace-page,.dashboard-page) main select:disabled,:is(.workspace-page,.dashboard-page) main textarea:disabled{opacity:.6;cursor:not-allowed}
+:is(.workspace-page,.dashboard-page) main input[type=checkbox],:is(.workspace-page,.dashboard-page) main input[type=radio]{flex:none;width:18px;height:18px;min-height:18px;margin:0;accent-color:var(--blue)}
+:is(.workspace-page,.dashboard-page) main label:has(>input[type=checkbox]),:is(.workspace-page,.dashboard-page) main label:has(>input[type=radio]){flex-direction:row;align-items:center;gap:10px;min-height:var(--control-height)}
+:is(.workspace-page,.dashboard-page) main input[type=file]{padding:7px;font-size:12px}
+:is(.workspace-page,.dashboard-page) main input[type=file]::file-selector-button{padding:7px 12px;border:0;border-radius:6px;margin-right:12px;background:color-mix(in srgb,var(--blue) 12%,var(--panel));color:var(--blue);font-weight:600;cursor:pointer}
+:is(.workspace-page,.dashboard-page) main form>label:has(textarea),:is(.workspace-page,.dashboard-page) main .form-field-wide,:is(.workspace-page,.dashboard-page) main form>textarea{flex:1 0 100%;width:100%}
+:is(.workspace-page,.dashboard-page) main form>p:has(+textarea){flex-basis:100%}
+:is(.workspace-page,.dashboard-page) main .field-grid{width:100%;gap:20px;margin-block:0 16px;align-items:start}
+:is(.workspace-page,.dashboard-page) main .field-grid label{width:100%;height:100%}
+:is(.workspace-page,.dashboard-page) main .field-grid label>input,:is(.workspace-page,.dashboard-page) main .field-grid label>select{margin-top:auto}
+:is(.workspace-page,.dashboard-page) main .form-actions{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;width:100%}
+:is(.workspace-page,.dashboard-page) main .form-actions label{flex:0 1 260px}
+:is(.workspace-page,.dashboard-page) main form>button,:is(.workspace-page,.dashboard-page) main .form-actions>button,:is(.workspace-page,.dashboard-page) main .button{min-height:var(--control-height);border-radius:var(--control-radius);padding:10px 17px;font-size:12px;font-weight:650;line-height:1.5;white-space:normal}
+:is(.workspace-page,.dashboard-page) main button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+:is(.workspace-page,.dashboard-page) main .campaign-filters,:is(.workspace-page,.dashboard-page) main .filters{padding:18px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--blue) 3%,var(--panel));gap:16px}
+:is(.workspace-page,.dashboard-page) main .campaign-filters label{flex:1 1 170px}
+:is(.workspace-page,.dashboard-page) main td form,:is(.workspace-page,.dashboard-page) main .inline-form{gap:10px;align-items:center}
+:is(.workspace-page,.dashboard-page) main td form>label{min-width:140px}
+:is(.workspace-page,.dashboard-page) main form>fieldset{width:100%;min-width:0;border:1px solid var(--border);padding:20px;border-radius:12px}
+:is(.workspace-page,.dashboard-page) main legend{padding:0 8px;font-weight:650}
+:is(.workspace-page,.dashboard-page) main #flow-builder{align-items:stretch}
+:is(.workspace-page,.dashboard-page) main #flow-builder>label:not(.form-field-wide){flex:1 1 240px}
+:is(.workspace-page,.dashboard-page) main #flow-builder .flow-node-tools{flex:1 0 100%;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg)}
+:is(.workspace-page,.dashboard-page) main #flow-builder #flow-graph{margin-top:8px}
+:is(.workspace-page,.dashboard-page) main #flow-preview{gap:16px}
+:is(.workspace-page,.dashboard-page) main .notice[role=alert]{border-left:4px solid #dc6684}
+@media(max-width:650px){:is(.workspace-page,.dashboard-page) main form>label{flex-basis:100%}:is(.workspace-page,.dashboard-page) main .field-grid{grid-template-columns:1fr}:is(.workspace-page,.dashboard-page) main input:not([type=checkbox]):not([type=radio]),:is(.workspace-page,.dashboard-page) main select,:is(.workspace-page,.dashboard-page) main textarea{font-size:16px}:is(.workspace-page,.dashboard-page) main .form-actions label{flex-basis:100%}:is(.workspace-page,.dashboard-page) main .campaign-filters{padding:14px}:is(.workspace-page,.dashboard-page) main #flow-builder .flow-node-tools{padding:12px}}
+@media(prefers-reduced-motion:reduce){:is(.workspace-page,.dashboard-page) main input,:is(.workspace-page,.dashboard-page) main select,:is(.workspace-page,.dashboard-page) main textarea,.identity-page input{transition:none}}
+
+:is(.workspace-page,.dashboard-page) main .form-field{display:flex;flex-direction:column;gap:8px;flex:1 1 240px;min-width:0}
+:is(.workspace-page,.dashboard-page) main .form-field>label{flex:none;display:block}
+:is(.workspace-page,.dashboard-page) main .form-field>input,:is(.workspace-page,.dashboard-page) main .form-field>select{width:100%}
+.identity-page .form-field{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}
+.identity-page select,.identity-page textarea{min-height:var(--control-height);border-radius:var(--control-radius);padding:11px 13px;border:1px solid color-mix(in srgb,var(--muted) 42%,var(--border));background:var(--panel);color:var(--ink);font:inherit}
+.identity-page textarea{min-height:120px}
+.identity-page select:focus-visible,.identity-page textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media(max-width:650px){:is(.workspace-page,.dashboard-page) main .form-field{flex-basis:100%}.identity-page input,.identity-page select,.identity-page textarea{font-size:16px}}

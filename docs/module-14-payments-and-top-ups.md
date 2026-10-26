@@ -10,7 +10,7 @@ The provider adapter is configuration-driven and **disabled by default**. The Xc
 | --- | --- | --- |
 | `PAYMENT_TOPUPS_ENABLED` | `false` | Master switch for new client top-ups. |
 | `PAYMENT_PROVIDER` | `xcel` | Active provider key and callback path segment. |
-| `PAYMENT_MIN_AMOUNT_MINOR` | `100` | Minimum top-up in integer minor units. |
+| `PAYMENT_MIN_AMOUNT_MINOR` | `1000` | Minimum top-up in integer minor units. GHS wallets enforce a floor of GHS 10.00. |
 | `PAYMENT_MAX_AMOUNT_MINOR` | `1000000` | Maximum top-up in integer minor units. |
 | `PAYMENT_PENDING_TTL_MINUTES` | `30` | Client-visible review window (clamped to 5–1440); never auto-cancels a paid intent. |
 | `PAYMENT_XCEL_DRIVER` | `disabled` | `http` enables live initiation. |

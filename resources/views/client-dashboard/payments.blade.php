@@ -16,6 +16,7 @@
 
 <section><h2>Add calling credit</h2>
 @if($onlineEnabled)
+<p>Enter any amount from {{ $fmt($limits['min_minor']) }} {{ $wallet->currency }} up to {{ $fmt($limits['max_minor']) }} {{ $wallet->currency }}.</p>
 <form method="post" action="{{ route('wallet.payments.store') }}">@csrf
 <input type="hidden" name="request_key" value="{{ \Illuminate\Support\Str::uuid() }}">
 <label>Amount ({{ $wallet->currency }})<input name="amount" value="{{ old('amount') }}" required maxlength="32" inputmode="decimal" placeholder="50.00" autocomplete="off"></label>

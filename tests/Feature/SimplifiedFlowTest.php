@@ -92,11 +92,13 @@ class SimplifiedFlowTest extends TestCase
             $xpath = new \DOMXPath($document);
             $active = $xpath->query('//nav[@aria-label="Main navigation"]//*[contains(concat(" ", normalize-space(@class), " "), " nav-item ") and contains(concat(" ", normalize-space(@class), " "), " active ")]');
             $this->assertCount(1, $active, $url);
+            $this->assertCount(1, $xpath->query('//nav[@aria-label="Main navigation"]//details[@open]'), $url);
+            $this->assertCount(1, $xpath->query('//nav[@aria-label="Main navigation"]//details[@open]//a[@aria-current="page"]'), $url);
             $this->assertStringContainsString($section, $active->item(0)->textContent);
-            $audio = $xpath->query('//details[@data-nav-group="audio"]//a')->item(0);
+            $audio = $xpath->query('//details[@data-nav-group="voice"]//a')->item(0);
             $this->assertSame(route('audio.index'), $audio->getAttribute('href'));
             $this->assertSame('Audio Library', trim($audio->textContent));
-            $schedule = $xpath->query('//nav[@aria-label="Main navigation"]/a[contains(., "Scheduling")]')->item(0);
+            $schedule = $xpath->query('//nav[@aria-label="Main navigation"]//a[contains(., "Scheduling")]')->item(0);
             $this->assertSame(route('campaigns.index', ['view' => 'scheduled']), $schedule->getAttribute('href'));
         }
     }

@@ -8,6 +8,8 @@ use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\ContactImport;
 use App\Models\WalletLedgerEntry;
+use App\Services\Billing\Tariffs;
+use App\Services\Billing\Wallet;
 use App\Services\Clients\Tenancy;
 use App\Services\Dashboard\Metrics;
 use App\Services\Dashboard\Scope;
@@ -30,9 +32,9 @@ class ClientDashboardController extends Controller
         }
         $clientId = $membership->client_id;
         $wallet = $membership->client->wallet;
-        $walletTariff = app(\App\Services\Billing\Tariffs::class)->snapshot($clientId);
-        $walletAffordability = $wallet ? app(\App\Services\Billing\Wallet::class)->affordability($wallet, $walletTariff) : null;
-        $walletSummary = $wallet ? app(\App\Services\Billing\Wallet::class)->summary($wallet) : null;
+        $walletTariff = app(Tariffs::class)->snapshot($clientId);
+        $walletAffordability = $wallet ? app(Wallet::class)->affordability($wallet, $walletTariff) : null;
+        $walletSummary = $wallet ? app(Wallet::class)->summary($wallet) : null;
         $data = $metrics->overview($request->user(), $filters);
         $data += [
             'client' => $membership->client,
@@ -40,6 +42,7 @@ class ClientDashboardController extends Controller
             'filters' => $filters,
             'wallet' => $wallet,
             'wallet_affordability' => $walletAffordability,
+            'wallet_tariff' => $walletTariff,
             'wallet_summary' => $walletSummary,
             // Read-only history: clients see their own charges and holds, never another tenant's.
             'wallet_entries' => $wallet ? WalletLedgerEntry::where('wallet_id', $wallet->id)->orderByDesc('id')->limit(5)

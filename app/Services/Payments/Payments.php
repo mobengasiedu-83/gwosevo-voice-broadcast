@@ -37,9 +37,11 @@ class Payments
     ) {}
 
     /** @return array{min_minor:int,max_minor:int,ttl_minutes:int} */
-    public function limits(): array
+    public function limits(?WalletAccount $wallet = null): array
     {
-        $min = max(1, (int) config('payments.min_amount_minor', 100));
+        // GHS top-ups must never fall below ten cedis, even with an older environment setting.
+        $floor = $wallet?->currency === 'GHS' ? 10 * (10 ** $wallet->minor_unit_scale) : 1;
+        $min = max($floor, (int) config('payments.min_amount_minor', 1000));
         $max = max($min, (int) config('payments.max_amount_minor', 1000000));
 
         return [
@@ -75,7 +77,7 @@ class Payments
             throw ValidationException::withMessages(['amount' => 'Online top-ups are not available yet. Please contact support.']);
         }
 
-        $limits = $this->limits();
+        $limits = $this->limits($wallet);
         $minor = $this->wallet->parse($data['amount'], $wallet->minor_unit_scale);
         if ($minor < $limits['min_minor'] || $minor > $limits['max_minor']) {
             throw ValidationException::withMessages(['amount' => sprintf(

@@ -33,7 +33,7 @@ class PaymentController extends Controller
             'client' => $membership->client, 'membership' => $membership,
             'payments' => $history, 'filters' => $filters,
             'wallet' => $membership->client->wallet,
-            'limits' => $payments->limits(),
+            'limits' => $payments->limits($membership->client->wallet),
             'onlineEnabled' => $gateway->enabled(),
         ])->header('Cache-Control', 'private, no-store');
     }

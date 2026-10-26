@@ -544,7 +544,7 @@ class Wallet
      */
     public function affordability(WalletAccount $wallet, ?array $tariff): array
     {
-        $base = ['exposure_minor' => 0, 'covered_calls' => 0, 'low' => true, 'reason' => null];
+        $base = ['exposure_minor' => 0, 'covered_calls' => 0, 'remaining_minutes' => null, 'low' => true, 'reason' => null];
         if (! $tariff) {
             return array_merge($base, ['reason' => 'tariff_missing']);
         }
@@ -557,12 +557,14 @@ class Wallet
         }
         if ($exposure === 0) {
             // A reviewed zero-rate tariff needs no credit, so it is never "low".
-            return ['exposure_minor' => 0, 'covered_calls' => null, 'low' => false, 'reason' => null];
+            return ['exposure_minor' => 0, 'covered_calls' => null, 'remaining_minutes' => null, 'low' => false, 'reason' => null];
         }
         $covered = intdiv($wallet->available_minor, $exposure);
 
         return [
             'exposure_minor' => $exposure, 'covered_calls' => $covered,
+            // Billing rounds each answered call up to whole minutes. Held credit is unavailable.
+            'remaining_minutes' => intdiv($wallet->available_minor, (int) $tariff['rate_minor_per_minute']),
             'low' => $covered < 1, 'reason' => $covered < 1 ? 'insufficient_credit' : null,
         ];
     }
