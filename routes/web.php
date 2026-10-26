@@ -507,3 +507,16 @@ Route::middleware('auth')->prefix('billing/payments')->name('billing.')->group(f
     Route::post('/{payment}/refund', [$payments, 'refund'])->middleware('throttle:10,1')->name('payments.refund');
 });
 
+
+Route::middleware('auth')->prefix('administration/staff')->name('staff.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\StaffUserController::class, 'index'])->name('index');
+    Route::post('/', [\App\Http\Controllers\StaffUserController::class, 'store'])->middleware('throttle:20,1')->name('store');
+    Route::post('/{user}/role', [\App\Http\Controllers\StaffUserController::class, 'updateRole'])->whereNumber('user')->middleware('throttle:20,1')->name('role');
+});
+
+Route::middleware('auth')->prefix('administration/roles')->name('roles.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\RoleManagementController::class, 'index'])->name('index');
+    Route::post('/', [\App\Http\Controllers\RoleManagementController::class, 'store'])->middleware('throttle:20,1')->name('store');
+    Route::put('/{role}', [\App\Http\Controllers\RoleManagementController::class, 'update'])->whereNumber('role')->middleware('throttle:20,1')->name('update');
+    Route::delete('/{role}', [\App\Http\Controllers\RoleManagementController::class, 'destroy'])->whereNumber('role')->middleware('throttle:20,1')->name('destroy');
+});

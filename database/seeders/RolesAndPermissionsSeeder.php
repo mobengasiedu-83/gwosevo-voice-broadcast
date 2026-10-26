@@ -40,7 +40,10 @@ class RolesAndPermissionsSeeder extends Seeder
             Permission::findOrCreate($name, 'web');
         }
         foreach ($matrix as $name => $permissions) {
-            Role::findOrCreate($name, 'web')->syncPermissions($permissions);
+            $role = Role::where('name', $name)->where('guard_name', 'web')->first();
+            if (! $role) {
+                Role::create(['name' => $name, 'guard_name' => 'web'])->syncPermissions($permissions);
+            }
         }
         User::whereHas('clientMembership')->each(fn ($user) => $user->syncRoles(['Client Member']));
         app(PermissionRegistrar::class)->forgetCachedPermissions();

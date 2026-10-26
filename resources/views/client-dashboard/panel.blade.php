@@ -17,7 +17,21 @@
 <strong>Unavailable</strong><small>Call time unavailable until a wallet and a matching call rate are configured.</small>
 @endif
 </div></div>
-@if(!$totals['contacts'] || !$totals['recordings'] || !$totals['campaigns'])<section class="client-get-started"><h2>Get started</h2><p>Prepare your audience and recording, then create your first campaign.</p><p><a href="{{ route('contacts.groups') }}">Create a contact group</a> · <a href="{{ route('contacts.imports') }}">Import contacts</a> · <a href="{{ route('audio.index') }}">Upload a recording</a> · <a href="{{ route('campaigns.create') }}">Create campaign</a></p></section>@endif
+@if(!$totals['contacts'] || !$totals['recordings'] || !$totals['campaigns'])<section class="client-get-started"><h2>Get started</h2><p>Prepare your audience and recording, then create your first campaign.</p><div class="client-setup-grid">
+@foreach([
+['contacts.groups','Create a contact group','Organize your audience.','audience','contacts.view'],
+['contacts.imports','Import contacts','Bring your contact list in.','clients','contacts.manage'],
+['audio.index','Upload a recording','Give your message a voice.','voice','audio.manage'],
+['campaigns.create','Create campaign','Put your message to work.','campaigns','campaigns.manage'],
+] as $step=>[$destination,$label,$description,$icon,$permission])
+@can($permission)
+<a class="client-setup-card" href="{{ route($destination) }}">
+<span class="client-setup-top"><span class="client-setup-icon">@include('dashboard.navigation-icon',['icon'=>$icon])</span><span class="client-setup-number">STEP {{ $step+1 }}</span></span>
+<strong>{{ $label }}</strong><span class="client-setup-description">{{ $description }}</span><span class="client-setup-arrow" aria-hidden="true">↗</span>
+</a>
+@endcan
+@endforeach
+</div></section>@endif
 <section><h2>Call results</h2><form method="get" action="{{ route('dashboard.overview') }}" class="campaign-filters"><label>Date<input type="date" name="date" required value="{{ $filters['date'] }}"></label><label>Timezone<input name="timezone" required value="{{ $filters['timezone'] }}"></label><label>Campaign<select name="campaign_id"><option value="">All campaigns</option>@foreach($campaign_options as $option)<option value="{{ $option->id }}" @selected(($filters['campaign_id']??'')==$option->id)>{{ $option->name }}</option>@endforeach</select></label><button>Refresh results</button></form><p>Results for {{ $filters['date'] }} in {{ $filters['timezone'] }}. Updated {{ $generated_at }}.</p>
 <div class="kpi-grid">@foreach(['calls_today'=>'Calls sent','answered'=>'Answered completed calls','completed'=>'Playback completed','active_calls'=>'Calls in progress','uncertain'=>'Calls awaiting confirmation'] as $key=>$label)<div class="kpi"><div>{{ $label }}</div><strong>{{ number_format($$key) }}</strong></div>@endforeach<div class="kpi"><div>Answer rate</div><strong>{{ $answer_rate===null?'—':$answer_rate.'%' }}</strong></div></div><p>Answer rate uses completed eligible attempts sent on the selected date. In-progress and awaiting-confirmation counts show current calls. An answered call does not confirm completed playback.</p>
 @if($uncertain)<p class="notice">Some call outcomes await confirmation. Review the campaign report before retrying.</p>@endif

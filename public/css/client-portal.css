@@ -93,3 +93,18 @@ html[data-portal-design] .client-portal #sidebar .nav-item.active{background:lin
 .client-portal #sidebar nav{display:flex;flex-direction:column;flex:1;min-height:min-content}
 .client-sidebar-help{margin-top:auto;padding-top:24px}
 .client-sidebar-help .nav-item{border-top:1px solid #ffffff20;justify-content:space-between}
+
+.client-setup-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:22px}
+.client-portal main .client-setup-card{--setup-accent:#7676e5;position:relative;display:flex;flex-direction:column;gap:10px;padding:20px 18px 24px;border:1px solid color-mix(in srgb,var(--setup-accent) 25%,var(--border));border-radius:14px;background:linear-gradient(140deg,color-mix(in srgb,var(--setup-accent) 7%,var(--panel)),var(--panel));color:var(--ink);transition:transform .2s,box-shadow .2s,border-color .2s;min-width:0}
+ .client-portal main .client-setup-card:nth-child(2){--setup-accent:#249f8e}.client-portal main .client-setup-card:nth-child(3){--setup-accent:#ba8033}.client-portal main .client-setup-card:nth-child(4){--setup-accent:#9660cd}
+.client-setup-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.client-setup-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:color-mix(in srgb,var(--setup-accent) 13%,var(--panel));color:var(--setup-accent)}
+.client-setup-icon svg{width:21px;height:21px}
+.client-setup-number{font-size:9px;letter-spacing:1.3px;font-weight:750;color:var(--muted)}
+.client-setup-card strong{font-size:13px;line-height:1.5;padding-right:14px}
+.client-setup-description{font-size:11px;line-height:1.7;color:var(--muted);padding-right:12px}
+.client-setup-arrow{position:absolute;right:16px;bottom:18px;color:var(--setup-accent);font-size:17px}
+.client-portal main .client-setup-card:hover{transform:translateY(-3px);border-color:var(--setup-accent);box-shadow:0 8px 20px #22275a12;color:var(--ink)}
+@media(max-width:1100px){.client-setup-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:550px){.client-setup-grid{grid-template-columns:1fr}.client-setup-card strong{font-size:14px}}
+@media(prefers-reduced-motion:reduce){.client-portal main .client-setup-card{transition:none}.client-portal main .client-setup-card:hover{transform:none}}

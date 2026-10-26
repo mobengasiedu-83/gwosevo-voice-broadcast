@@ -38,6 +38,8 @@
             ['Call reconciliation', 'billing.exceptions', ['telephony.manage'], request()->routeIs('billing.exceptions*')],
         ]],
         'administration' => ['Administration', [
+            ... (auth()->user()->isSuperAdministrator() ? [['Role management', 'roles.index', [], request()->routeIs('roles.*')]] : []),
+            ['Internal staff', 'staff.index', ['users.manage'], request()->routeIs('staff.*')],
             ['Compliance & Quality', 'workspace', ['audit.view'], request()->routeIs('workspace')],
         ]],
         'account' => ['Account', [

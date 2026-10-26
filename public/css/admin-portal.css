@@ -44,3 +44,16 @@ html[data-portal-design] .admin-portal #sidebar .admin-nav-group .subnav .nav-it
 @media(prefers-reduced-motion:reduce){.admin-portal *,.admin-portal *::before,.admin-portal *::after{animation:none!important;transition:none!important}}
 
 .admin-portal main .admin-page-banner small{color:#e0e7ff;font-size:12px;line-height:1.6}
+
+.staff-role-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.admin-portal main .staff-role-cards article{margin:0;padding:18px;border:1px solid var(--border);border-top:3px solid #818cf8;border-radius:12px;background:color-mix(in srgb,#818cf8 4%,var(--panel));min-width:0}
+.staff-role-cards article:nth-child(2n){border-top-color:#5ecdb7}
+.staff-role-cards ul{padding-left:20px;color:var(--muted);font-size:12px;line-height:1.9;overflow-wrap:anywhere}
+@media(max-width:650px){.staff-role-cards{grid-template-columns:1fr}}
+
+.role-permission-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;width:100%;margin:12px 0}
+.admin-portal main .role-permission-grid fieldset{min-width:0;padding:16px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,#818cf8 4%,var(--panel))}
+.admin-portal main .role-permission-grid legend{padding:0 7px;color:var(--ink);font-weight:650}
+.admin-portal main .role-permission-grid label{display:flex;flex-direction:row;align-items:center;gap:10px;min-height:36px;overflow-wrap:anywhere;font-weight:400}
+@media(max-width:1000px){.role-permission-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.role-permission-grid{grid-template-columns:1fr}}
