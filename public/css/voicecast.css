@@ -31,6 +31,9 @@ html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item{font-size:1
 @media(prefers-reduced-motion:reduce){#sidebar .admin-nav-chevron{transition:none}}
 
 /* Separate label, icon and disclosure sizing: generic nav-item spans are icons. */
+#sidebar .admin-nav-group>summary::after{content:none;display:none}
+#sidebar:has(.admin-nav-group) nav{display:block}
+
 html[data-portal-design] #sidebar .admin-nav-group>summary{display:grid;grid-template-columns:18px minmax(0,1fr) 14px;align-items:center;gap:11px;min-height:44px;padding:11px 12px;font-size:13px;line-height:1.4;font-weight:600;border:1px solid transparent;border-radius:10px;transition:background .18s,border-color .18s}
 #sidebar .admin-nav-group>summary .admin-nav-label{display:block;width:auto;min-width:0;text-align:left;font-size:13px;line-height:1.4;font-weight:600;white-space:normal;overflow-wrap:normal}
 #sidebar .admin-nav-icon{display:block;width:18px;height:18px;color:#91a9d1}

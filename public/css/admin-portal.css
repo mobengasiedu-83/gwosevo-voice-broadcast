@@ -1,0 +1,46 @@
+/* Admin portal: indigo, mint and warm amber accents. */
+.admin-portal{background:radial-gradient(ellipse at 100% 0,color-mix(in srgb,#818cf8 9%,transparent),transparent 55%),var(--bg)}
+html[data-portal-design] .admin-portal aside#sidebar{background:radial-gradient(ellipse at 0 0,#34357a,transparent 55%),linear-gradient(170deg,#152344,#101a32 75%)}
+.admin-portal #sidebar .brand{border-bottom-color:#ffffff20;position:relative;padding-left:15px}
+.admin-portal #sidebar .brand::before{content:"";position:absolute;left:0;top:10px;width:5px;height:38px;background:linear-gradient(#a5b4fc,#5eead4);border-radius:8px}
+html[data-portal-design] .admin-portal #sidebar .nav-item.active{background:linear-gradient(110deg,#5558bd,#394b85);box-shadow:inset 3px 0 #9ef0df}
+.admin-portal .nav-item,.admin-portal .client-nav-group>summary{transition:background .2s,transform .2s}
+.admin-portal #sidebar a.nav-item:hover{transform:translateX(3px)}
+.client-eyebrow{color:#bbf7e8;letter-spacing:2px;font-size:10px;font-weight:800}
+.admin-portal .kpi-grid .kpi{position:relative;overflow:hidden;border-top:3px solid var(--card-accent,#818cf8);background:linear-gradient(135deg,color-mix(in srgb,var(--card-accent,#818cf8) 7%,var(--panel)),var(--panel));transition:transform .2s,box-shadow .2s;animation:client-enter .5s ease-out both}
+.kpi-grid .kpi:nth-child(2){--card-accent:#2bb8a0;animation-delay:40ms}
+.kpi-grid .kpi:nth-child(3){--card-accent:#6e9df5;animation-delay:80ms}
+.kpi-grid .kpi:nth-child(4){--card-accent:#d99547;animation-delay:120ms}
+.kpi-grid .kpi:nth-child(5){--card-accent:#ad7ce5;animation-delay:160ms}
+.kpi-grid .kpi::after{content:"";position:absolute;width:65px;height:65px;border:14px solid color-mix(in srgb,var(--card-accent,#818cf8) 10%,transparent);border-radius:50%;right:-20px;top:-20px;pointer-events:none}
+.admin-portal .kpi-grid .kpi:hover{transform:translateY(-4px);box-shadow:0 10px 24px #151d4912}
+.admin-portal.workspace-page main section{box-shadow:0 4px 20px #19234905;border-radius:16px}
+.admin-portal.workspace-page main section>h2{display:flex;align-items:center;gap:10px}
+.admin-portal.workspace-page main section>h2::before{content:"";display:block;flex-shrink:0;width:5px;height:17px;border-radius:5px;background:linear-gradient(#818cf8,#5ecdb7)}
+.admin-portal.workspace-page main .client-get-started{border-color:color-mix(in srgb,#5ecdb7 40%,var(--border));background:linear-gradient(110deg,color-mix(in srgb,#5ecdb7 8%,var(--panel)),var(--panel))}
+.admin-portal .button{transition:transform .2s,box-shadow .2s}
+.admin-portal .button:hover{transform:translateY(-2px);box-shadow:0 5px 15px #353c8a20}
+@keyframes client-float{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}
+@keyframes client-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.admin-portal *,.admin-portal *::before,.admin-portal *::after{animation:none!important;transition:none!important}}
+
+
+.client-page-banner{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:152px;padding:22px 28px;margin:0 0 26px;border-radius:18px;background:linear-gradient(115deg,#293c8d,#6551b8);color:white;overflow:hidden;box-shadow:0 10px 25px #29275a16;animation:client-enter .45s ease-out both}
+.client-page-banner>div{min-width:0}
+.client-page-banner p{font-size:20px;font-weight:650;margin:8px 0 12px;line-height:1.35}
+.workspace-page main .client-page-banner a{color:#c4f7e9;font-size:12px;font-weight:650;display:inline-block}
+.client-page-banner img{width:200px;height:117px;object-fit:contain;animation:client-float 6s ease-in-out 3;flex-shrink:0}
+
+.admin-portal .panel,.admin-portal.workspace-page main section{border-radius:16px;box-shadow:0 4px 20px #19234905}
+.admin-portal .panel-heading h2{display:flex;align-items:center;gap:10px}
+.admin-portal .panel-heading h2::before{content:"";width:5px;height:17px;border-radius:5px;background:linear-gradient(#818cf8,#5ecdb7);flex-shrink:0}
+html[data-portal-design] .admin-portal #sidebar .admin-nav-group[data-active]>summary{background:linear-gradient(110deg,#3a3b79,#293b67);border-color:#a5b4fc30}
+html[data-portal-design] .admin-portal #sidebar .admin-nav-group .subnav .nav-item.active{background:linear-gradient(110deg,#5558bd,#394b85);box-shadow:inset 3px 0 #9ef0df;color:#fff}
+.admin-portal .client-page-banner p{color:#fff}
+.admin-portal .module-tabs a,.admin-portal .flow-steps a{border-radius:10px;background:color-mix(in srgb,#818cf8 5%,var(--panel));border-color:var(--border)}
+.admin-portal .flow-node{border-color:color-mix(in srgb,#818cf8 35%,var(--border));border-top:3px solid #818cf8;border-radius:12px;background:color-mix(in srgb,#818cf8 6%,var(--panel))}
+@media(max-width:650px){.admin-portal .client-page-banner{padding:20px;min-height:130px}.admin-portal .client-page-banner p{font-size:16px}.admin-portal .client-page-banner img{width:115px;height:85px}.admin-portal .client-page-banner .client-eyebrow{font-size:8px;letter-spacing:1px}}
+@media(max-width:380px){.admin-portal .client-page-banner img{display:none}}
+@media(prefers-reduced-motion:reduce){.admin-portal *,.admin-portal *::before,.admin-portal *::after{animation:none!important;transition:none!important}}
+
+.admin-portal main .admin-page-banner small{color:#e0e7ff;font-size:12px;line-height:1.6}
