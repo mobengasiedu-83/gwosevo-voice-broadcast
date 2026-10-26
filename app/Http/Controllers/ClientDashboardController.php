@@ -30,12 +30,17 @@ class ClientDashboardController extends Controller
         }
         $clientId = $membership->client_id;
         $wallet = $membership->client->wallet;
+        $walletTariff = app(\App\Services\Billing\Tariffs::class)->snapshot($clientId);
+        $walletAffordability = $wallet ? app(\App\Services\Billing\Wallet::class)->affordability($wallet, $walletTariff) : null;
+        $walletSummary = $wallet ? app(\App\Services\Billing\Wallet::class)->summary($wallet) : null;
         $data = $metrics->overview($request->user(), $filters);
         $data += [
             'client' => $membership->client,
             'membership' => $membership,
             'filters' => $filters,
             'wallet' => $wallet,
+            'wallet_affordability' => $walletAffordability,
+            'wallet_summary' => $walletSummary,
             // Read-only history: clients see their own charges and holds, never another tenant's.
             'wallet_entries' => $wallet ? WalletLedgerEntry::where('wallet_id', $wallet->id)->orderByDesc('id')->limit(5)
                 ->get(['id', 'type', 'available_delta_minor', 'reserved_delta_minor', 'available_after_minor', 'reserved_after_minor', 'currency', 'minor_unit_scale', 'reason', 'created_at']) : collect(),

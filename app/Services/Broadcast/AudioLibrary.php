@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\User;
 use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
+use App\Services\Notifications\Notifier;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -101,6 +102,7 @@ class AudioLibrary
             }
             app(Foundation::class)->audit($actor, 'audio.approved', $audio, ['checksum' => $audio->checksum, 'self_approval' => $audio->uploaded_by === $actor->id]);
         });
+        app(Notifier::class)->audioReviewed($audio, 'approved', null, $actor);
     }
 
     public function reject(User $actor, AudioFile $audio, string $reason): void
@@ -118,6 +120,7 @@ class AudioLibrary
             $audio->update(['status' => 'rejected', 'rejected_by' => $actor->id, 'rejected_at' => now(), 'rejection_reason' => $reason]);
             app(Foundation::class)->audit($actor, 'audio.rejected', $audio, ['reason' => $reason]);
         });
+        app(Notifier::class)->audioReviewed($audio, 'rejected', $reason, $actor);
     }
 
     public function resubmit(User $actor, AudioFile $audio): void

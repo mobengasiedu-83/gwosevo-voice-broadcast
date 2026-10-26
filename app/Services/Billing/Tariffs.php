@@ -5,11 +5,13 @@ namespace App\Services\Billing;
 use App\Models\CallTariff;
 use App\Models\Client;
 use App\Models\User;
+use App\Models\WalletAccount;
 use App\Services\Broadcast\Engine;
 use App\Services\Foundation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class Tariffs
 {
@@ -39,8 +41,15 @@ class Tariffs
         DB::transaction(function () use ($actor, $client, $tariff, $reason) {
             app(Engine::class)->mutex();
             Client::whereKey($client->id)->lockForUpdate()->firstOrFail();
+            // A funded wallet's denomination is immutable: assigning a tariff in
+            // another currency would make every admission fail closed later.
+            $wallet = WalletAccount::where('client_id', $client->id)->lockForUpdate()->first();
+            if ($wallet && ($wallet->currency !== $tariff->currency || (int) $wallet->minor_unit_scale !== (int) $tariff->minor_unit_scale)) {
+                throw ValidationException::withMessages(['tariff_id' => 'The tariff currency and minor-unit scale must match the client wallet ('
+                    .$wallet->currency.' / '.$wallet->minor_unit_scale.').']);
+            }
             DB::table('client_tariffs')->updateOrInsert(['client_id' => $client->id], ['call_tariff_id' => $tariff->id, 'updated_at' => now()]);
-            app(Foundation::class)->audit($actor, 'billing.tariff_assigned', $client, ['tariff_id' => $tariff->id, 'reason' => $reason]);
+            app(Foundation::class)->audit($actor, 'billing.tariff_assigned', $client, ['tariff_id' => $tariff->id, 'reason' => $reason, 'previous_wallet_currency' => $wallet?->currency]);
         });
     }
 

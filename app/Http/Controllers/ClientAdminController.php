@@ -3,11 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\BillingDispute;
+use App\Models\CallTariff;
 use App\Models\Campaign;
 use App\Models\Client;
 use App\Models\ClientMembership;
 use App\Models\ContactImport;
+use App\Models\PaymentIntent;
 use App\Models\User;
+use App\Models\WalletLedgerEntry;
+use App\Models\WalletReservation;
+use App\Services\Billing\Tariffs;
+use App\Services\Billing\Wallet;
 use App\Services\Clients\Accounts;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -65,11 +72,12 @@ class ClientAdminController extends Controller
     public function show(Request $request, int $client)
     {
         $client = $this->client($client);
-        $filters = $request->validate(['tab' => 'nullable|in:overview,profile,users,campaigns,activity,finance', 'activity' => 'nullable|in:all,logins,account', 'campaign_status' => 'nullable|in:draft,ready,pending_approval,approved,scheduled,running,paused,completed,cancelled,failed']);
+        $filters = $request->validate(['tab' => 'nullable|in:overview,profile,users,campaigns,activity,finance', 'activity' => 'nullable|in:all,logins,account', 'campaign_status' => 'nullable|in:draft,ready,pending_approval,approved,scheduled,running,paused,completed,cancelled,failed', 'ledger_type' => 'nullable|in:'.implode(',', Wallet::TYPES), 'reservation_state' => 'nullable|in:held,settled,released,shortfall']);
         $tab = $filters['tab'] ?? 'overview';
         $client->loadCount(['contacts', 'campaigns', 'imports', 'recordings', 'memberships']);
         $memberships = $campaigns = $imports = $audits = null;
-        $usage = null;
+        $usage = $financeWallet = $financeTariff = $financeAffordability = $financeSummary = $financeEntries = $financeReservations = $financeVerification = null;
+        $financeTariffs = $financePayments = $financeDisputes = null;
         if (in_array($tab, ['overview', 'users'])) {
             $memberships = $client->memberships()->with('user')->orderBy('id')->paginate(20, ['*'], 'users_page')->withQueryString();
         }
@@ -88,7 +96,30 @@ class ClientAdminController extends Controller
             $audits = $query->latest('id')->paginate(20, ['*'], 'audit_page')->withQueryString();
         }
 
-        return response()->view('clients.show', compact('client', 'filters', 'tab', 'memberships', 'campaigns', 'imports', 'audits', 'usage'))->header('Cache-Control', 'private, no-store');
+        if ($tab === 'finance' && $request->user()->can('billing.manage')) {
+            $financeWallet = $client->wallet;
+            $financeTariff = app(Tariffs::class)->snapshot($client->id);
+            $financeTariffs = CallTariff::orderBy('code')->orderByDesc('version')->get();
+            $financePayments = PaymentIntent::where('client_id', $client->id)->orderByDesc('id')
+                ->limit(10)->get(['public_id', 'amount_minor', 'currency', 'minor_unit_scale', 'status', 'created_at', 'credited_at']);
+            $financeDisputes = BillingDispute::where('client_id', $client->id)->orderByDesc('id')
+                ->limit(10)->get(['public_id', 'category', 'status', 'subject', 'amount_minor', 'currency', 'minor_unit_scale', 'created_at', 'credit_amount_minor']);
+            if ($financeWallet) {
+                $wallets = app(Wallet::class);
+                $financeSummary = $wallets->summary($financeWallet);
+                $financeAffordability = $wallets->affordability($financeWallet, $financeTariff);
+                $financeVerification = $wallets->verify($financeWallet);
+                $financeEntries = WalletLedgerEntry::where('wallet_id', $financeWallet->id)
+                    ->when($filters['ledger_type'] ?? null, fn ($query, $type) => $query->where('type', $type))
+                    ->orderByDesc('id')->paginate(10, ['*'], 'finance_entries')->withQueryString();
+                $financeReservations = WalletReservation::where('wallet_id', $financeWallet->id)
+                    ->when(($filters['reservation_state'] ?? null) === 'shortfall', fn ($query) => $query->where('state', 'settled')->where('shortfall_minor', '>', 0))
+                    ->when(in_array($filters['reservation_state'] ?? null, ['held', 'settled', 'released'], true), fn ($query) => $query->where('state', $filters['reservation_state']))
+                    ->orderByDesc('id')->paginate(10, ['*'], 'finance_reservations')->withQueryString();
+            }
+        }
+
+        return response()->view('clients.show', compact('client', 'filters', 'tab', 'memberships', 'campaigns', 'imports', 'audits', 'usage', 'financeWallet', 'financeTariff', 'financeAffordability', 'financeSummary', 'financeEntries', 'financeReservations', 'financeVerification', 'financeTariffs', 'financePayments', 'financeDisputes'))->header('Cache-Control', 'private, no-store');
     }
 
     public function profile(Request $request, int $client, Accounts $accounts)

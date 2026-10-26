@@ -37,6 +37,11 @@ class CallAttempt extends Model
         return $this->hasMany(BillingException::class);
     }
 
+    public function disputes()
+    {
+        return $this->hasMany(BillingDispute::class);
+    }
+
     protected function casts(): array
     {
         return ['tariff_snapshot' => 'array', 'ivr_completed_at' => 'datetime', 'opted_out_at' => 'datetime', 'transfer_started_at' => 'datetime', 'transfer_answered_at' => 'datetime', 'sent_at' => 'datetime', 'answered_at' => 'datetime', 'playback_started_at' => 'datetime', 'playback_completed_at' => 'datetime', 'ended_at' => 'datetime'];

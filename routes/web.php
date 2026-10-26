@@ -1,20 +1,30 @@
 
 <?php
 
+use App\Http\Controllers\BillingDisputeController;
 use App\Http\Controllers\BroadcastController;
 use App\Http\Controllers\CallRatingController;
+use App\Http\Controllers\ClientDisputeController;
+use App\Http\Controllers\ClientWalletStatementController;
+use App\Http\Controllers\FinanceReportController;
+use App\Http\Controllers\RatePlanController;
 use App\Http\Controllers\WalletController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ClientAccountController;
 use App\Http\Controllers\ClientAdminController;
 use App\Http\Controllers\ClientNoticeController;
+use App\Http\Controllers\ClientWalletController;
 use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FoundationController;
 use App\Http\Controllers\IdentityController;
 use App\Http\Controllers\InteractiveController;
 use App\Http\Controllers\InternalTestMediaController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PbxMediaController;
+use App\Http\Controllers\PaymentAdminController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SessionController;
 use App\Http\Middleware\VerifyTurnstile;
 use Illuminate\Support\Facades\Route;
@@ -52,6 +62,19 @@ Route::get(
 )
     ->where('token', '[a-f0-9]{64}')
     ->name('internal-test.media');
+
+/*
+|--------------------------------------------------------------------------
+| Payment Provider Callbacks
+|--------------------------------------------------------------------------
+| No session or CSRF token: callers are authenticated by an HMAC signature and
+| replay window. Every payload is re-verified before any state changes.
+*/
+
+Route::post('/payments/webhook/{provider}', PaymentWebhookController::class)
+    ->where('provider', '[a-z0-9_-]{1,32}')
+    ->middleware('throttle:120,1')
+    ->name('payments.webhook');
 
 /*
 |--------------------------------------------------------------------------
@@ -151,6 +174,9 @@ Route::middleware('auth')
 
         Route::get('/campaigns/{campaign}/report', [$c, 'report'])
             ->name('report');
+
+        Route::get('/campaigns/{campaign}/report.csv', [$c, 'exportReport'])
+            ->name('report.export');
 
         Route::post('/emergency', [$c, 'emergency'])
             ->name('emergency');
@@ -264,6 +290,25 @@ Route::middleware('auth')
         Route::post('/calls/{attempt}/stop', [$c, 'stop'])
             ->name('stop');
     });
+
+Route::get('/wallet', ClientWalletController::class)
+    ->middleware('auth')
+    ->name('wallet.index');
+Route::get('/wallet/statement', ClientWalletStatementController::class)
+    ->middleware('auth')
+    ->name('wallet.statement');
+Route::middleware('auth')->prefix('wallet/disputes')->name('wallet.disputes.')->group(function () {
+    Route::get('/', [ClientDisputeController::class, 'index'])->name('index');
+    Route::post('/', [ClientDisputeController::class, 'store'])->middleware('throttle:5,1')->name('store');
+});
+
+Route::middleware('auth')->prefix('wallet/payments')->name('wallet.payments.')->group(function () {
+    $payments = PaymentController::class;
+    Route::get('/', [$payments, 'index'])->name('index');
+    Route::post('/', [$payments, 'store'])->middleware('throttle:10,1')->name('store');
+    Route::get('/{payment}', [$payments, 'show'])->whereUuid('payment')->name('show');
+    Route::get('/{payment}/receipt', [$payments, 'receipt'])->whereUuid('payment')->name('receipt');
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -412,6 +457,12 @@ Route::middleware('auth')->prefix('account')->name('account.')->group(function (
     Route::post('/security', [$account, 'security'])->middleware(['throttle:5,1', VerifyTurnstile::class.':identity'])->name('security.save');
     Route::get('/notifications', [ClientNoticeController::class, 'index'])->name('notifications');
     Route::post('/notifications/read', [ClientNoticeController::class, 'read'])->name('notifications.read');
+    Route::post('/notifications/alerts/read', [ClientNoticeController::class, 'readAlerts'])->name('notifications.alerts.read');
+});
+
+Route::middleware('auth')->prefix('notifications')->name('notifications.')->group(function () {
+    Route::get('/', [NotificationController::class, 'index'])->name('index');
+    Route::post('/read', [NotificationController::class, 'read'])->name('read');
 });
 
 Route::get('/billing/reconciliation', [CallRatingController::class, 'index'])->middleware('auth')->name('billing.exceptions');
@@ -420,8 +471,38 @@ Route::middleware('auth')->prefix('billing/wallets')->name('billing.')->group(fu
     $wallets = WalletController::class;
     Route::get('/', [$wallets, 'index'])->name('wallets');
     Route::get('/{client}', [$wallets, 'show'])->whereNumber('client')->name('wallets.show');
+    Route::get('/{client}/statement', [$wallets, 'statement'])->whereNumber('client')->name('wallets.statement');
     Route::post('/{client}/open', [$wallets, 'open'])->whereNumber('client')->name('wallets.open');
+    Route::post('/{client}/credit', [$wallets, 'credit'])->whereNumber('client')->middleware('throttle:20,1')->name('wallets.credit');
     Route::post('/{client}/entries', [$wallets, 'post'])->whereNumber('client')->name('wallets.post');
     Route::post('/{client}/entries/{entry}/reverse', [$wallets, 'reverse'])->whereNumber(['client', 'entry'])->name('wallets.reverse');
+});
+
+Route::middleware('auth')->prefix('billing/rates')->name('billing.')->group(function () {
+    $rates = RatePlanController::class;
+    Route::get('/', [$rates, 'index'])->name('rates');
+    Route::post('/', [$rates, 'store'])->name('rates.store');
+    Route::post('/assign', [$rates, 'assign'])->name('rates.assign');
+});
+
+Route::middleware('auth')->prefix('billing/finance')->name('billing.')->group(function () {
+    $finance = FinanceReportController::class;
+    Route::get('/', [$finance, 'index'])->name('finance');
+    Route::get('/export', [$finance, 'export'])->middleware('throttle:20,1')->name('finance.export');
+});
+
+Route::middleware('auth')->prefix('billing/disputes')->name('billing.')->group(function () {
+    $disputes = BillingDisputeController::class;
+    Route::get('/', [$disputes, 'index'])->name('disputes');
+    Route::post('/', [$disputes, 'store'])->middleware('throttle:10,1')->name('disputes.store');
+    Route::post('/{dispute}/resolve', [$disputes, 'resolve'])->whereUuid('dispute')->middleware('throttle:10,1')->name('disputes.resolve');
+});
+
+Route::middleware('auth')->prefix('billing/payments')->name('billing.')->group(function () {
+    $payments = PaymentAdminController::class;
+    Route::get('/', [$payments, 'index'])->name('payments');
+    Route::post('/reconcile', [$payments, 'reconcile'])->middleware('throttle:10,1')->name('payments.reconcile');
+    Route::get('/{payment}', [$payments, 'show'])->whereUuid('payment')->name('payments.show');
+    Route::post('/{payment}/refund', [$payments, 'refund'])->middleware('throttle:10,1')->name('payments.refund');
 });
 

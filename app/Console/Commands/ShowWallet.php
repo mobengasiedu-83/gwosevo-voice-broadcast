@@ -39,8 +39,15 @@ class ShowWallet extends Command
             ['Ledger available', Wallet::amount($check['ledger_available_minor'], $account->minor_unit_scale)],
             ['Ledger reserved', Wallet::amount($check['ledger_reserved_minor'], $account->minor_unit_scale)],
             ['Held reservations', Wallet::amount($check['held_minor'], $account->minor_unit_scale)],
-            ['Reconciled', $check['available_match'] && $check['reserved_match'] && $check['held_match'] ? 'yes' : 'NO — finance review required'],
+            ['Ledger chain', $check['chain_ok'] ? 'intact' : 'BROKEN — finance review required'],
+            ['Reservation entries', $check['reservation_entry_missing'] === 0 ? 'complete' : $check['reservation_entry_missing'].' missing'],
+            ['Settlement entries', $check['settlement_entry_missing'] === 0 ? 'complete' : $check['settlement_entry_missing'].' missing'],
+            ['Settlement amounts', $check['settlement_amounts_match'] ? 'match' : 'MISMATCH — finance review required'],
+            ['Reconciled', $check['ok'] ? 'yes' : 'NO — finance review required'],
         ]);
+        foreach ($check['issues'] as $issue) {
+            $this->warn($issue);
+        }
         $entries = WalletLedgerEntry::where('wallet_id', $account->id)->latest('id')->limit(10)->get()
             ->map(fn ($entry) => [
                 $entry->id, $entry->type,
@@ -51,6 +58,6 @@ class ShowWallet extends Command
             ])->all();
         $this->table(['#', 'Type', 'Available Δ', 'Reserved Δ', 'Available after', 'Posted (UTC)'], $entries);
 
-        return $check['available_match'] && $check['reserved_match'] && $check['held_match'] ? self::SUCCESS : self::FAILURE;
+        return $check['ok'] ? self::SUCCESS : self::FAILURE;
     }
 }

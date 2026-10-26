@@ -304,13 +304,14 @@ class ClientIdentityTest extends TestCase
 
     public function test_sms_test_command_normalises_numbers_and_reports_the_provider_result(): void
     {
-        Http::fake(['api.txtconnect.net/*' => Http::response(['messageId' => 'S1799_test', 'data' => ['status_code' => '000', 'in_error' => false]], 200)]);
+        Http::fakeSequence('api.txtconnect.net/*')
+            ->push(['messageId' => 'S1799_test', 'data' => ['status_code' => '000', 'in_error' => false]], 200)
+            ->push(['msg' => 'Invalid sender', 'data' => ['status_code' => '103', 'in_error' => true]], 200);
         $this->artisan('identity:sms-test', ['phone' => '0531005130'])
             ->expectsOutputToContain('TxtConnect accepted the SMS for +233531005130. Message id: S1799_test')
             ->assertSuccessful();
         Http::assertSent(fn ($request) => $request['to'] === '233531005130' && $request['from'] === 'VoiceCast' && $request['unicode'] === '0');
 
-        Http::fake(['api.txtconnect.net/*' => Http::response(['msg' => 'Invalid sender', 'data' => ['status_code' => '103', 'in_error' => true]], 200)]);
         $this->artisan('identity:sms-test', ['phone' => '+233531005130'])->expectsOutputToContain('SMS delivery failed')->assertFailed();
 
         $this->artisan('identity:sms-test', ['phone' => '123'])->expectsOutputToContain('The mobile number is not valid.')->assertFailed();

@@ -6,12 +6,15 @@ use App\Models\AuditLog;
 use App\Models\CallAttempt;
 use App\Models\CallRating;
 use App\Models\Client;
+use App\Models\PaymentIntent;
 use App\Models\User;
 use App\Models\WalletAccount;
 use App\Models\WalletLedgerEntry;
 use App\Models\WalletReservation;
 use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
+use App\Services\Notifications\Notifier;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
@@ -64,6 +67,18 @@ class Wallet
             'currency_mismatch' => 'The wallet currency and minor-unit scale must match the assigned tariff.',
             'insufficient_credit' => 'Insufficient calling credit for one reserved call. Ask Finance to top up the wallet before launching.',
             default => 'A calling wallet is not configured for this account.',
+        };
+    }
+
+    /** Client-facing explanation of a credit or tariff state. */
+    public static function clientMessage(string $reason): string
+    {
+        return match ($reason) {
+            'insufficient_credit' => 'Available credit is below the maximum cost of one full call. New calls will not start until Finance tops up the wallet.',
+            'tariff_missing' => 'A call tariff is not assigned yet. Finance must configure billing before calls can be admitted.',
+            'tariff_not_priced' => 'The assigned call tariff cannot be priced. Finance must assign a reviewed tariff version.',
+            'currency_mismatch' => 'The wallet currency does not match the assigned call tariff. Finance must correct the billing configuration.',
+            default => 'Credit checks are unavailable until Finance completes billing configuration.',
         };
     }
 
@@ -127,7 +142,8 @@ class Wallet
     /** Hold the maximum exposure for one attempt. Null when the account is not wallet-backed. */
     public function reserve(CallAttempt $attempt): ?WalletReservation
     {
-        return DB::transaction(function () use ($attempt) {
+        try {
+            return DB::transaction(function () use ($attempt) {
             $clientId = app(Tenancy::class)->ownerOf($attempt);
             if ($clientId === null) {
                 return null;
@@ -169,13 +185,23 @@ class Wallet
                 'Reserved maximum exposure for attempt '.$attempt->uuid, null, 'billing:reservation:'.$attempt->id);
 
             return $reservation;
-        });
+            });
+        } catch (WalletDeclined $e) {
+            if ($e->reason === 'insufficient_credit') {
+                $clientId = app(Tenancy::class)->ownerOf($attempt);
+                $wallet = $clientId ? WalletAccount::where('client_id', $clientId)->first() : null;
+                if ($wallet) {
+                    app(Notifier::class)->lowBalance($wallet, (int) ($e->context['exposure_minor'] ?? 0));
+                }
+            }
+            throw $e;
+        }
     }
 
     /** Release a held reservation after a definitively unanswered call. */
-    public function release(CallAttempt $attempt, string $reason): bool
+    public function release(CallAttempt $attempt, string $reason, ?User $actor = null): bool
     {
-        return DB::transaction(function () use ($attempt, $reason) {
+        return DB::transaction(function () use ($attempt, $reason, $actor) {
             $reservation = WalletReservation::where('call_attempt_id', $attempt->id)->lockForUpdate()->first();
             if (! $reservation || $reservation->state !== 'held') {
                 return false;
@@ -191,8 +217,13 @@ class Wallet
             $wallet->available_minor += $amount;
             $wallet->save();
             $reservation->update(['state' => 'released', 'released_at' => now(), 'release_reason' => mb_substr($reason, 0, 255)]);
-            $this->entry($wallet, 'release', $amount, -$amount, $reservation, $attempt, null,
+            $this->entry($wallet, 'release', $amount, -$amount, $reservation, $attempt, $actor,
                 'Reservation released: '.$reason, null, 'billing:release:'.$attempt->id);
+            if ($actor) {
+                app(Foundation::class)->audit($actor, 'billing.wallet_hold_expired', $reservation, [
+                    'attempt_id' => $attempt->id, 'amount_minor' => $amount, 'reason' => $reason,
+                ]);
+            }
 
             return true;
         });
@@ -205,7 +236,7 @@ class Wallet
      * returns held credit to the available balance; it never invents a charge,
      * rewrites a ledger entry or deletes the reservation history.
      */
-    public function expire(int $hours = 24, int $limit = 500): int
+    public function expire(int $hours = 24, int $limit = 500, ?User $actor = null): int
     {
         $hours = max(1, min(24 * 30, $hours));
         $limit = max(1, min(1000, $limit));
@@ -219,7 +250,7 @@ class Wallet
             if (! $attempt || CallRating::where('call_attempt_id', $attempt->id)->exists()) {
                 continue;
             }
-            if ($this->release($attempt, 'Hold expired after '.$hours.'h without final rating evidence')) {
+            if ($this->release($attempt, 'Hold expired after '.$hours.'h without final rating evidence', $actor)) {
                 $released++;
             }
         }
@@ -288,6 +319,9 @@ class Wallet
                     'created_at' => now(),
                 ]);
             }
+            if ($wallet->available_minor < $reservation->amount_minor) {
+                app(Notifier::class)->lowBalance($wallet, (int) $reservation->amount_minor);
+            }
 
             return $shortfall ? 'settled_shortfall' : 'settled';
         });
@@ -309,6 +343,11 @@ class Wallet
             if (WalletAccount::where('client_id', $locked->id)->exists()) {
                 throw ValidationException::withMessages(['client_id' => 'This client already has a wallet.']);
             }
+            $tariff = app(Tariffs::class)->snapshot($locked->id);
+            if ($tariff && (($tariff['currency'] ?? null) !== $data['currency'] || (int) ($tariff['minor_unit_scale'] ?? -1) !== (int) $data['minor_unit_scale'])) {
+                throw ValidationException::withMessages(['currency' => 'The wallet currency and minor-unit scale must match the assigned call tariff ('
+                    .$tariff['currency'].' / '.$tariff['minor_unit_scale'].').']);
+            }
             $wallet = WalletAccount::create([
                 'client_id' => $locked->id, 'currency' => $data['currency'], 'minor_unit_scale' => (int) $data['minor_unit_scale'],
                 'available_minor' => 0, 'reserved_minor' => 0,
@@ -318,6 +357,43 @@ class Wallet
             ]);
 
             return $wallet;
+        });
+    }
+
+    /**
+     * Credit a verified online top-up. There is no human actor: the verified
+     * provider callback is the approval, and the intent id is the unique key.
+     */
+    public function creditPayment(PaymentIntent $intent, string $eventId): WalletLedgerEntry
+    {
+        if ($intent->amount_minor < 1 || ! in_array($intent->status, ['pending', 'failed', 'cancelled'], true)) {
+            throw new RuntimeException('Only an open or failed payment can be credited.');
+        }
+        $key = 'payment:'.$intent->public_id;
+
+        return DB::transaction(function () use ($intent, $eventId, $key) {
+            $wallet = WalletAccount::whereKey($intent->wallet_id)->lockForUpdate()->firstOrFail();
+            if ((int) $wallet->client_id !== (int) $intent->client_id) {
+                throw new RuntimeException('The payment wallet belongs to another client.');
+            }
+            if ($wallet->currency !== $intent->currency || (int) $wallet->minor_unit_scale !== (int) $intent->minor_unit_scale) {
+                throw new RuntimeException('The payment currency no longer matches the wallet.');
+            }
+            $existing = WalletLedgerEntry::where('idempotency_key', $key)->first();
+            if ($existing) {
+                if ((int) $existing->wallet_id !== (int) $wallet->id || (int) $existing->available_delta_minor !== (int) $intent->amount_minor) {
+                    throw new RuntimeException('A different ledger entry already uses this payment reference.');
+                }
+
+                return $existing;
+            }
+            $wallet->available_minor += $intent->amount_minor;
+            $wallet->save();
+
+            return $this->entry(
+                $wallet, 'funding', $intent->amount_minor, 0, null, null, null,
+                'Online top-up '.$intent->public_id, 'Provider event '.$eventId, $key,
+            );
         });
     }
 
@@ -363,6 +439,34 @@ class Wallet
         });
     }
 
+    /**
+     * Credit a wallet directly from the administrator console. This is the
+     * supported manual-credit path for authorized administrators; it still
+     * writes an append-only funding entry and an immutable audit record.
+     */
+    public function manualCredit(User $actor, WalletAccount $wallet, string $amount, string $reason, ?string $approval = null, ?string $key = null): WalletLedgerEntry
+    {
+        Gate::forUser($actor)->authorize('billing.manage');
+        $data = Validator::make(compact('amount', 'reason', 'approval'), [
+            'amount' => 'required|string|max:32',
+            'reason' => 'required|string|min:3|max:255',
+            'approval' => 'nullable|string|max:255',
+        ])->validate();
+        $minor = $this->parse($data['amount'], $wallet->minor_unit_scale);
+        if ($minor < 1) {
+            throw ValidationException::withMessages(['amount' => 'Enter a positive credit amount.']);
+        }
+        // The authenticated administrator is the authorization; an external
+        // approval reference is optional but recorded when supplied.
+        $reference = trim((string) ($data['approval'] ?? ''))
+            ?: mb_substr('Manual credit by '.$actor->name.' (user #'.$actor->id.') on '.now()->toIso8601String(), 0, 255);
+
+        return $this->post(
+            $actor, $wallet, 'funding', self::amount($minor, $wallet->minor_unit_scale),
+            $data['reason'], $reference, $key ?: 'admin:credit:'.Str::uuid(),
+        );
+    }
+
     /** Reverse an approved funding/adjustment entry with an opposite ledger entry. */
     public function reverse(User $actor, WalletAccount $wallet, WalletLedgerEntry $entry, string $reason, string $approval): WalletLedgerEntry
     {
@@ -399,18 +503,168 @@ class Wallet
         });
     }
 
-    /** Reconcile stored balances and holds with the immutable ledger. */
+    /**
+     * Operational counts for the admin console and client wallet history.
+     * Money values are integer minor units, matching the ledger.
+     */
+    public function summary(WalletAccount $wallet): array
+    {
+        // One aggregate keeps the client dashboard and wallet pages cheap even
+        // as reservation history grows.
+        $row = WalletReservation::where('wallet_id', $wallet->id)->selectRaw(
+            "SUM(CASE WHEN state = 'held' THEN 1 ELSE 0 END) as held_count,
+             COALESCE(SUM(CASE WHEN state = 'held' THEN amount_minor ELSE 0 END), 0) as held_minor,
+             SUM(CASE WHEN state = 'held' AND reserved_at <= ? THEN 1 ELSE 0 END) as stale_hold_count,
+             MIN(CASE WHEN state = 'held' THEN reserved_at END) as oldest_hold_at,
+             SUM(CASE WHEN state = 'settled' THEN 1 ELSE 0 END) as settled_count,
+             COALESCE(SUM(CASE WHEN state = 'settled' THEN settled_minor ELSE 0 END), 0) as settled_minor,
+             SUM(CASE WHEN state = 'settled' AND shortfall_minor > 0 THEN 1 ELSE 0 END) as shortfall_count,
+             COALESCE(SUM(CASE WHEN state = 'settled' THEN shortfall_minor ELSE 0 END), 0) as shortfall_minor,
+             SUM(CASE WHEN state = 'released' THEN 1 ELSE 0 END) as released_count",
+            [now()->subDay()]
+        )->first();
+
+        return [
+            'held_count' => (int) $row->held_count,
+            'held_minor' => (int) $row->held_minor,
+            'stale_hold_count' => (int) $row->stale_hold_count,
+            'oldest_hold_at' => $row->oldest_hold_at ? CarbonImmutable::parse($row->oldest_hold_at) : null,
+            'settled_count' => (int) $row->settled_count,
+            'settled_minor' => (int) $row->settled_minor,
+            'shortfall_count' => (int) $row->shortfall_count,
+            'shortfall_minor' => (int) $row->shortfall_minor,
+            'released_count' => (int) $row->released_count,
+        ];
+    }
+
+    /**
+     * Informational view of one full-hold affordability at the assigned tariff.
+     * admission() remains the authoritative origination gate; this only lets the
+     * portal explain a low-credit state before an operator tries to launch.
+     */
+    public function affordability(WalletAccount $wallet, ?array $tariff): array
+    {
+        $base = ['exposure_minor' => 0, 'covered_calls' => 0, 'low' => true, 'reason' => null];
+        if (! $tariff) {
+            return array_merge($base, ['reason' => 'tariff_missing']);
+        }
+        if (! $this->matches($wallet, $tariff)) {
+            return array_merge($base, ['reason' => 'currency_mismatch']);
+        }
+        $exposure = $this->exposureMinor($tariff);
+        if ($exposure === null) {
+            return array_merge($base, ['reason' => 'tariff_not_priced']);
+        }
+        if ($exposure === 0) {
+            // A reviewed zero-rate tariff needs no credit, so it is never "low".
+            return ['exposure_minor' => 0, 'covered_calls' => null, 'low' => false, 'reason' => null];
+        }
+        $covered = intdiv($wallet->available_minor, $exposure);
+
+        return [
+            'exposure_minor' => $exposure, 'covered_calls' => $covered,
+            'low' => $covered < 1, 'reason' => $covered < 1 ? 'insufficient_credit' : null,
+        ];
+    }
+
+    /**
+     * Reconcile stored balances, the running ledger chain, holds and the
+     * reservation lifecycle with the immutable ledger.
+     */
     public function verify(WalletAccount $wallet): array
     {
         $available = (int) WalletLedgerEntry::where('wallet_id', $wallet->id)->sum('available_delta_minor');
         $reserved = (int) WalletLedgerEntry::where('wallet_id', $wallet->id)->sum('reserved_delta_minor');
         $held = (int) WalletReservation::where('wallet_id', $wallet->id)->where('state', 'held')->sum('amount_minor');
+        $chain = $this->ledgerChain($wallet);
+        $lifecycle = $this->lifecycle($wallet);
+
+        $availableMatch = $available === $wallet->available_minor;
+        $reservedMatch = $reserved === $wallet->reserved_minor;
+        $heldMatch = $held === $wallet->reserved_minor;
+        $issues = [];
+        if (! $availableMatch) {
+            $issues[] = 'Stored available balance does not match the ledger.';
+        }
+        if (! $reservedMatch) {
+            $issues[] = 'Stored reserved balance does not match the ledger.';
+        }
+        if (! $heldMatch) {
+            $issues[] = 'Reserved balance does not match open holds.';
+        }
+        if (! $chain['chain_ok']) {
+            $issues[] = $chain['chain_issue'];
+        }
+        if ($lifecycle['reservation_entry_missing'] > 0) {
+            $issues[] = $lifecycle['reservation_entry_missing'].' reservation(s) lack an opening hold entry.';
+        }
+        if ($lifecycle['release_entry_missing'] > 0) {
+            $issues[] = $lifecycle['release_entry_missing'].' released reservation(s) lack a release entry.';
+        }
+        if ($lifecycle['settlement_entry_missing'] > 0) {
+            $issues[] = $lifecycle['settlement_entry_missing'].' settled reservation(s) lack a settlement entry.';
+        }
+        if (! $lifecycle['settlement_amounts_match']) {
+            $issues[] = 'Settlement debits do not equal settled charges minus shortfalls.';
+        }
+
+        return array_merge([
+            'available_match' => $availableMatch,
+            'reserved_match' => $reservedMatch,
+            'held_match' => $heldMatch,
+            'ledger_available_minor' => $available, 'ledger_reserved_minor' => $reserved, 'held_minor' => $held,
+            'ok' => $issues === [], 'issues' => $issues,
+        ], $chain, $lifecycle);
+    }
+
+    /** Rebuild the append-only balance chain in entry order. */
+    private function ledgerChain(WalletAccount $wallet): array
+    {
+        $runningAvailable = 0;
+        $runningReserved = 0;
+        $chainOk = true;
+        $chainIssue = null;
+        $entries = WalletLedgerEntry::where('wallet_id', $wallet->id)->orderBy('id')
+            ->get(['id', 'available_delta_minor', 'reserved_delta_minor', 'available_after_minor', 'reserved_after_minor']);
+        foreach ($entries as $entry) {
+            $runningAvailable += $entry->available_delta_minor;
+            $runningReserved += $entry->reserved_delta_minor;
+            if ($runningAvailable !== $entry->available_after_minor || $runningReserved !== $entry->reserved_after_minor) {
+                $chainOk = false;
+                $chainIssue ??= 'Ledger entry #'.$entry->id.' carries balances that do not follow from its deltas.';
+            }
+        }
+
+        return ['chain_ok' => $chainOk, 'chain_issue' => $chainIssue];
+    }
+
+    /** Every reservation must have an opening hold and the matching closing entry. */
+    private function lifecycle(WalletAccount $wallet): array
+    {
+        $reservationEntries = WalletLedgerEntry::where('wallet_id', $wallet->id)
+            ->where('type', 'reservation')->whereNotNull('wallet_reservation_id')->select('wallet_reservation_id');
+        $releaseEntries = WalletLedgerEntry::where('wallet_id', $wallet->id)
+            ->where('type', 'release')->whereNotNull('wallet_reservation_id')->select('wallet_reservation_id');
+        $settlementEntries = WalletLedgerEntry::where('wallet_id', $wallet->id)
+            ->where('type', 'settlement')->whereNotNull('wallet_reservation_id')->select('wallet_reservation_id');
+        $reservationMissing = WalletReservation::where('wallet_id', $wallet->id)->whereNotIn('id', $reservationEntries)->count();
+        $releaseMissing = WalletReservation::where('wallet_id', $wallet->id)->where('state', 'released')->whereNotIn('id', $releaseEntries)->count();
+        $settlementMissing = WalletReservation::where('wallet_id', $wallet->id)->where('state', 'settled')->whereNotIn('id', $settlementEntries)->count();
+
+        // A settlement entry's (available + reserved) delta is the negative of the
+        // amount actually paid; shortfalls remain receivables and are not debited.
+        $paid = -(int) WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'settlement')
+            ->selectRaw('COALESCE(SUM(available_delta_minor + reserved_delta_minor), 0) as total')->value('total');
+        $payable = (int) WalletReservation::where('wallet_id', $wallet->id)->where('state', 'settled')
+            ->selectRaw('COALESCE(SUM(settled_minor - shortfall_minor), 0) as total')->value('total');
 
         return [
-            'available_match' => $available === $wallet->available_minor,
-            'reserved_match' => $reserved === $wallet->reserved_minor,
-            'held_match' => $held === $wallet->reserved_minor,
-            'ledger_available_minor' => $available, 'ledger_reserved_minor' => $reserved, 'held_minor' => $held,
+            'reservation_entry_missing' => $reservationMissing,
+            'release_entry_missing' => $releaseMissing,
+            'settlement_entry_missing' => $settlementMissing,
+            'settlement_amounts_match' => $paid === $payable,
+            'settlement_paid_minor' => $paid,
+            'settled_payable_minor' => $payable,
         ];
     }
 

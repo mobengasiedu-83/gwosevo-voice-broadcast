@@ -223,7 +223,10 @@ class Engine
     public function complete(int $campaignId): void
     {
         if (! CampaignRecipient::where('campaign_id', $campaignId)->whereIn('status', ['pending', 'reserved', 'active', 'unknown'])->exists()) {
-            Campaign::whereKey($campaignId)->where('status', 'running')->update(['status' => 'completed']);
+            $updated = Campaign::whereKey($campaignId)->where('status', 'running')->update(['status' => 'completed']);
+            if ($updated) {
+                app(\App\Services\Notifications\Notifier::class)->campaignCompleted($campaignId);
+            }
         }
     }
 

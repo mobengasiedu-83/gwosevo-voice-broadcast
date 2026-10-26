@@ -14,6 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectUsersTo(fn () => route('dashboard.overview'));
         $middleware->web(append: [ActiveClient::class]);
+
+        // Signed provider callbacks have no browser session; authenticity is
+        // enforced by the HMAC signature and timestamp in PaymentProvider.
+        $middleware->validateCsrfTokens(except: ['payments/webhook/*']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontFlash(['password', 'password_confirmation', 'current_password', 'code', 'cf-turnstile-response']);

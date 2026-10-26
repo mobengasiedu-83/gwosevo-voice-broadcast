@@ -22,7 +22,7 @@ class ExpireWalletHolds extends Command
         }
         $hours = max(1, min(24 * 30, (int) $this->option('hours')));
         $limit = max(1, min(1000, (int) $this->option('limit')));
-        $released = $wallets->expire($hours, $limit);
+        $released = $wallets->expire($hours, $limit, $actor);
         $this->info('Released '.$released.' stale wallet hold(s) older than '.$hours.' hour(s). Settlement still charges available credit; reconciled histories are unchanged.');
 
         return self::SUCCESS;

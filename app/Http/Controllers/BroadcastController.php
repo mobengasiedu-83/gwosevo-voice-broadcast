@@ -10,12 +10,15 @@ use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\Engine;
+use App\Services\Billing\Rating;
 use App\Services\Campaigns\Workspace;
 use App\Services\Foundation;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class BroadcastController extends Controller
 {
@@ -165,6 +168,53 @@ class BroadcastController extends Controller
         });
 
         return back()->with('status', 'Trunk disabled for new broadcasts.');
+    }
+
+    public function exportReport(Request $request, Campaign $campaign)
+    {
+        $user = $request->user();
+        abort_unless($user->hasAnyPermission(['reports.view', 'broadcast.operate', 'audit.view', 'campaigns.approve']) || ($user->can('campaigns.view') && $campaign->owner_id === $user->id), 403);
+        $ids = CampaignRecipient::where('campaign_id', $campaign->id)->select('id');
+        $filename = 'campaign-'.(Str::slug($campaign->name) ?: $campaign->id).'-'.$campaign->id.'-report.csv';
+
+        return response()->streamDownload(function () use ($ids) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['attempt_uuid', 'state', 'outcome', 'sent_at', 'answered_at', 'playback_started_at',
+                'playback_completed_at', 'ended_at', 'duration_ms', 'billable_minutes', 'rated_amount', 'currency',
+                'billing_exceptions'], ',', '"', '');
+            CallAttempt::with(['rating', 'timingEvidence', 'billingExceptions'])
+                ->whereIn('campaign_recipient_id', $ids)
+                ->orderBy('id')
+                ->chunk(500, function ($attempts) use ($out) {
+                    foreach ($attempts as $attempt) {
+                        fputcsv($out, [
+                            $this->csvCell($attempt->uuid), $this->csvCell($attempt->state), $this->csvCell($attempt->outcome),
+                            $this->csvDate($attempt->sent_at), $this->csvDate($attempt->answered_at),
+                            $this->csvDate($attempt->playback_started_at), $this->csvDate($attempt->playback_completed_at),
+                            $this->csvDate($attempt->ended_at),
+                            $attempt->timingEvidence?->duration_ms ?? 0,
+                            $attempt->timingEvidence?->billable_minutes ?? 0,
+                            $attempt->rating ? Rating::amount($attempt->rating) : 0,
+                            $this->csvCell($attempt->rating?->currency),
+                            $this->csvCell($attempt->billingExceptions->pluck('issue')->implode(' | ')),
+                        ], ',', '"', '');
+                    }
+                });
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store']);
+    }
+
+    private function csvDate($value): string
+    {
+        return $value ? CarbonImmutable::parse($value)->utc()->format('Y-m-d H:i:s') : '';
+    }
+
+    private function csvCell($value): string
+    {
+        $value = (string) ($value ?? '');
+
+        // Prevent spreadsheet formula execution from provider-controlled text.
+        return preg_match('/\A[=+\-@]/', $value) ? "'".$value : $value;
     }
 
     public function report(Request $request, Campaign $campaign)

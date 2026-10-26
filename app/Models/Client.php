@@ -51,4 +51,19 @@ class Client extends Model
     {
         return $this->hasOne(WalletAccount::class);
     }
+
+    public function walletReservations()
+    {
+        return $this->hasManyThrough(WalletReservation::class, WalletAccount::class, 'client_id', 'wallet_id');
+    }
+
+    public function disputes()
+    {
+        return $this->hasMany(BillingDispute::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(PaymentIntent::class);
+    }
 }

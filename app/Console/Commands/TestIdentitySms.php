@@ -37,7 +37,7 @@ class TestIdentitySms extends Command
             return self::FAILURE;
         }
 
-        $this->info('TxtConnect accepted the SMS for '.$phone.($messageId !== '' ? ' Message id: '.$messageId : ''));
+        $this->info('TxtConnect accepted the SMS for '.$phone.'.'.($messageId !== '' ? ' Message id: '.$messageId : ''));
         $this->line('Acceptance only means the message was queued; confirm it arrived on the handset.');
 
         return self::SUCCESS;

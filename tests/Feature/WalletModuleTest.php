@@ -24,8 +24,11 @@ use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use LogicException;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class WalletModuleTest extends TestCase
@@ -194,6 +197,7 @@ class WalletModuleTest extends TestCase
             $this->assertSame('insufficient_credit', $declined->reason);
         }
         $this->assertSame(0, WalletReservation::count());
+        $this->assertDatabaseHas('user_notifications', ['user_id' => $this->member->id, 'event_key' => 'billing.low_balance']);
 
         $wallets->post($this->admin, $wallet, 'funding', '4.50', 'Minimum launch credit', 'FIN-010', 'test-minimum');
         $this->assertTrue($wallets->admission($this->client->id, $snapshot)['allowed']);
@@ -350,7 +354,11 @@ class WalletModuleTest extends TestCase
         $this->assertSame('held', $reservation->refresh()->state);
 
         WalletReservation::whereKey($reservation->id)->update(['reserved_at' => now()->subHours(48)]);
-        $this->assertSame(1, $wallets->expire(24));
+        $summary = $wallets->summary($wallet->refresh());
+        $this->assertSame(1, $summary['stale_hold_count']);
+        $this->assertSame(450, $summary['held_minor']);
+        $this->assertTrue($summary['oldest_hold_at']->lessThan(now()->subDay()));
+        $this->assertSame(1, $wallets->expire(24, 500, $this->admin));
         $wallet->refresh();
         $this->assertSame(1000, $wallet->available_minor);
         $this->assertSame(0, $wallet->reserved_minor);
@@ -359,6 +367,8 @@ class WalletModuleTest extends TestCase
         $this->assertStringContainsString('expired', $reservation->release_reason);
         $release = WalletLedgerEntry::where('wallet_reservation_id', $reservation->id)->where('type', 'release')->firstOrFail();
         $this->assertSame(450, $release->available_delta_minor);
+        $this->assertSame($this->admin->id, $release->actor_id);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'billing.wallet_hold_expired', 'actor_id' => $this->admin->id]);
 
         // Expiry is idempotent and appends history instead of rewriting it.
         $this->assertSame(0, $wallets->expire(24));
@@ -403,5 +413,214 @@ class WalletModuleTest extends TestCase
 
         // The client portal shows its own credit read-only and never another tenant's activity.
         $this->actingAs($this->member)->get('/dashboard')->assertOk()->assertSee('Calling credit')->assertSee('Available credit')->assertSee('Funding')->assertDontSee('9.99')->assertDontSee('Other customer');
+    }
+
+    public function test_client_wallet_page_shows_only_own_balance_holds_and_transactions(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Approved client top-up', 'FIN-300', 'client-page-funding');
+        [$attempt] = $this->attempt();
+        $this->assertNotNull($wallets->reserve($attempt));
+
+        $other = app(Accounts::class)->create($this->admin, 'Other wallet customer');
+        app(Accounts::class)->status($this->admin, $other, 'active', 'Ready');
+        $otherWallet = $wallets->open($this->admin, $other, 'GHS', 2, 'Approved onboarding');
+        $wallets->post($this->admin, $otherWallet, 'funding', '9.99', 'Other tenant funding', 'FIN-301', 'client-page-other');
+
+        $this->actingAs($this->member)->get('/wallet')
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertSee('Calling credit')
+            ->assertSee('10.00')
+            ->assertSee('4.50')
+            ->assertSee('Calls in flight')
+            ->assertSee('Paid from wallet')
+            ->assertSee('Approved client top-up')
+            ->assertSee('Attempt '.$attempt->id)
+            ->assertSee('Reserved maximum exposure')
+            ->assertDontSee('Other wallet customer')
+            ->assertDontSee('9.99');
+
+        // Type and state filters remain scoped to this tenant's wallet.
+        $this->get('/wallet?type=funding')->assertOk()->assertSee('Approved client top-up')->assertDontSee('Reserved maximum exposure');
+        $this->get('/wallet?type=reservation')->assertOk()->assertSee('Reserved maximum exposure')->assertDontSee('Approved client top-up');
+        $this->get('/wallet?state=held')->assertOk()->assertSee('Attempt '.$attempt->id);
+        $this->get('/wallet?state=settled')->assertOk()->assertDontSee('Attempt '.$attempt->id);
+        $this->get('/wallet?type=invalid')->assertSessionHasErrors('type');
+
+        // Administrators have no client membership, so this portal route is not theirs.
+        $this->actingAs($this->admin)->get('/wallet')->assertForbidden();
+    }
+
+    public function test_admin_wallet_console_summarises_coverage_holds_and_filters(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Seed funding', 'FIN-310', 'console-funding');
+        [$attempt] = $this->attempt();
+        $this->assertNotNull($wallets->reserve($attempt));
+        $unfunded = app(Accounts::class)->create($this->admin, 'Unfunded customer');
+        app(Accounts::class)->status($this->admin, $unfunded, 'active', 'Ready');
+
+        $this->actingAs($this->admin)->get('/billing/wallets/'.$this->client->id)
+            ->assertOk()
+            ->assertSee('Tariff and one-call coverage')
+            ->assertSee('wallet-test')
+            ->assertSee('One-call exposure')
+            ->assertSee('Full holds covered')
+            ->assertSee('Holds older than 24h')
+            ->assertSee('Ledger reconciliation')
+            ->assertSee('Seed funding')
+            ->assertSee('Attempt '.$attempt->id);
+
+        $this->get('/billing/wallets/'.$this->client->id.'?type=funding')->assertOk()->assertSee('Seed funding')->assertDontSee('Reserved maximum exposure');
+        $this->get('/billing/wallets/'.$this->client->id.'?type=reservation')->assertOk()->assertSee('Reserved maximum exposure')->assertDontSee('Seed funding');
+        $this->get('/billing/wallets/'.$this->client->id.'?state=held')->assertOk()->assertSee('Attempt '.$attempt->id);
+        $this->get('/billing/wallets/'.$this->client->id.'?state=settled')->assertOk()->assertDontSee('Attempt '.$attempt->id);
+
+        $this->get('/billing/wallets?state=funded')->assertOk()->assertSee('Wallet customer')->assertDontSee('Unfunded customer');
+        $this->get('/billing/wallets?state=unfunded')->assertOk()->assertSee('Unfunded customer')->assertDontSee('Wallet customer');
+        $this->get('/billing/wallets?state=held')->assertOk()->assertSee('Wallet customer')->assertDontSee('Unfunded customer')->assertSee('Held credit');
+    }
+
+    public function test_admin_client_finance_tab_requires_billing_permission_and_shows_wallet(): void
+    {
+        $wallet = $this->wallet();
+        app(Wallet::class)->post($this->admin, $wallet, 'funding', '25.00', 'Finance tab funding', 'FIN-320', 'finance-tab');
+
+        $this->actingAs($this->admin)->get('/clients/'.$this->client->id.'?tab=finance')
+            ->assertOk()
+            ->assertSee('Tariff and one-call coverage')
+            ->assertSee('wallet-test')
+            ->assertSee('25.00')
+            ->assertSee('Finance tab funding')
+            ->assertSee('Ledger reconciliation passed')
+            ->assertSee('Manage wallet, ledger and reservations');
+
+        // A manager with only clients.manage sees the tab but no financial detail.
+        $role = Role::findOrCreate('Client Manager', 'web');
+        $role->syncPermissions(['clients.manage']);
+        $manager = User::factory()->create();
+        $manager->assignRole($role);
+        $this->actingAs($manager)->get('/clients/'.$this->client->id.'?tab=finance')
+            ->assertOk()
+            ->assertSee('billing.manage')
+            ->assertDontSee('Finance tab funding')
+            ->assertDontSee('wallet-test');
+
+        $this->actingAs($this->member)->get('/clients/'.$this->client->id.'?tab=finance')->assertForbidden();
+    }
+
+    public function test_wallet_currency_must_match_the_assigned_tariff(): void
+    {
+        $wallets = app(Wallet::class);
+        try {
+            $wallets->open($this->admin, $this->client, 'USD', 2, 'Mismatched wallet');
+            $this->fail('A wallet opened in a currency that does not match the assigned tariff.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('currency', $e->errors());
+            $this->assertStringContainsString('must match the assigned call tariff', collect($e->errors())->flatten()->first());
+        }
+        $this->assertSame(0, WalletAccount::where('client_id', $this->client->id)->count());
+
+        $wallet = $wallets->open($this->admin, $this->client, 'GHS', 2, 'Matching wallet');
+        $this->assertSame('GHS', $wallet->currency);
+        $this->assertSame(2, $wallet->minor_unit_scale);
+    }
+
+    public function test_wallet_verification_detects_ledger_chain_and_lifecycle_tampering(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Verify funding', 'FIN-330', 'verify-funding');
+        [$attempt, $proof] = $this->attempt(60001);
+        $wallets->reserve($attempt);
+        $this->assertSame('rated', app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'private/wallet-verify'));
+
+        $check = $wallets->verify($wallet->refresh());
+        $this->assertTrue($check['ok']);
+        $this->assertTrue($check['chain_ok']);
+        $this->assertSame(0, $check['reservation_entry_missing']);
+        $this->assertSame(0, $check['release_entry_missing']);
+        $this->assertSame(0, $check['settlement_entry_missing']);
+        $this->assertTrue($check['settlement_amounts_match']);
+        $this->assertSame(60, $check['settlement_paid_minor']);
+        $this->assertSame(60, $check['settled_payable_minor']);
+
+        // Simulate external corruption of a historical "balance after" snapshot.
+        $settlement = WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'settlement')->firstOrFail();
+        DB::table('wallet_ledger_entries')->where('id', $settlement->id)
+            ->update(['available_after_minor' => $settlement->available_after_minor + 1]);
+        $broken = $wallets->verify($wallet->refresh());
+        $this->assertFalse($broken['chain_ok']);
+        $this->assertFalse($broken['ok']);
+        $this->assertStringContainsString('do not follow', implode(' ', $broken['issues']));
+
+        // Restore the snapshot, then simulate a missing settlement close.
+        DB::table('wallet_ledger_entries')->where('id', $settlement->id)
+            ->update(['available_after_minor' => $settlement->available_after_minor]);
+        DB::table('wallet_ledger_entries')->where('id', $settlement->id)->delete();
+        $missing = $wallets->verify($wallet->refresh());
+        $this->assertSame(1, $missing['settlement_entry_missing']);
+        $this->assertFalse($missing['settlement_amounts_match']);
+        $this->assertFalse($missing['ok']);
+    }
+
+    public function test_wallet_denomination_cannot_change_after_ledger_history(): void
+    {
+        $wallet = $this->wallet();
+        app(Wallet::class)->post($this->admin, $wallet, 'funding', '1.00', 'Denomination guard', 'FIN-340', 'denomination');
+
+        foreach (['currency' => 'USD', 'minor_unit_scale' => 3] as $field => $value) {
+            try {
+                $wallet->{$field} = $value;
+                $wallet->save();
+                $this->fail('Wallet '.$field.' changed after ledger history existed.');
+            } catch (LogicException $e) {
+                $this->assertStringContainsString('cannot change', $e->getMessage());
+            }
+            $wallet->refresh();
+        }
+
+        $other = app(Accounts::class)->create($this->admin, 'Denomination target');
+        try {
+            $wallet->client_id = $other->id;
+            $wallet->save();
+            $this->fail('Wallet ownership changed after ledger history existed.');
+        } catch (LogicException $e) {
+            $this->assertStringContainsString('cannot change', $e->getMessage());
+        }
+        $this->assertSame($this->client->id, $wallet->refresh()->client_id);
+    }
+
+    public function test_affordability_reports_full_hold_coverage_and_low_credit(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $tariff = app(Tariffs::class)->snapshot($this->client->id);
+
+        $empty = $wallets->affordability($wallet, $tariff);
+        $this->assertSame(450, $empty['exposure_minor']);
+        $this->assertSame(0, $empty['covered_calls']);
+        $this->assertTrue($empty['low']);
+        $this->assertSame('insufficient_credit', $empty['reason']);
+        $this->assertStringContainsString('below the maximum cost', Wallet::clientMessage($empty['reason']));
+        $this->assertStringContainsString('not assigned', Wallet::clientMessage('tariff_missing'));
+        $this->assertStringContainsString('does not match', Wallet::clientMessage('currency_mismatch'));
+
+        $wallets->post($this->admin, $wallet, 'funding', '4.49', 'Below one hold', 'FIN-350', 'afford-1');
+        $this->assertTrue($wallets->affordability($wallet->refresh(), $tariff)['low']);
+
+        $wallets->post($this->admin, $wallet, 'funding', '0.01', 'Exactly one hold', 'FIN-351', 'afford-2');
+        $covered = $wallets->affordability($wallet->refresh(), $tariff);
+        $this->assertSame(1, $covered['covered_calls']);
+        $this->assertFalse($covered['low']);
+        $this->assertNull($covered['reason']);
+
+        $missing = $wallets->affordability($wallet->refresh(), null);
+        $this->assertSame('tariff_missing', $missing['reason']);
+        $this->assertTrue($missing['low']);
+        $this->assertSame(0, $missing['covered_calls']);
     }
 }

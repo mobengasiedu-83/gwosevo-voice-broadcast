@@ -12,6 +12,9 @@ sudo -u gwosevo composer install \
 echo "=== RUN DATABASE MIGRATIONS ==="
 sudo -u gwosevo php artisan migrate --force
 
+echo "=== SEED ROLES AND PERMISSIONS ==="
+sudo -u gwosevo php artisan db:seed --class=RolesAndPermissionsSeeder --force
+
 echo "=== CLEAR OLD CACHES ==="
 sudo -u gwosevo php artisan optimize:clear
 
@@ -60,3 +63,6 @@ review module 10 and apply any missing features and functions.
 review module 11 and apply any missing features and functions.
 review module 12 and apply any missing features and functions.
 review module 13 and apply any missing features and functions.
+review module 14 and apply any missing features and functions.
+review module 15 and apply any missing features and functions.
+review module 16 and apply any missing features and functions.

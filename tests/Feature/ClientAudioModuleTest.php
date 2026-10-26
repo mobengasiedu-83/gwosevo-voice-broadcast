@@ -87,6 +87,7 @@ class ClientAudioModuleTest extends TestCase
         $this->assertSame('draft', $foreignCampaign->fresh()->status);
         $this->assertSame('approved', $audio->fresh()->status);
         $this->assertSame('ready', $campaign->fresh()->status);
+        $this->assertDatabaseHas('user_notifications', ['user_id' => $this->owner->id, 'event_key' => 'audio.approved']);
         $this->assertDatabaseHas('audit_logs', ['client_id' => $this->client->id, 'action' => 'audio.resubmitted', 'actor_id' => $this->member->id]);
         $this->actingAs($this->member)->get('/account/notifications')->assertSee('Recording approved');
     }

@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\Readiness;
 use App\Services\Clients\Tenancy;
+use App\Services\Notifications\Notifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -100,5 +101,8 @@ class Foundation
             $campaign->update(['status' => $status]);
             $this->audit($actor, 'campaign.'.$decision, $campaign, ['before' => $before, 'after' => $status]);
         });
+        if (in_array($decision, ['approve', 'reject'], true)) {
+            app(Notifier::class)->campaignReviewed($campaign, $decision, $reason, $actor);
+        }
     }
 }

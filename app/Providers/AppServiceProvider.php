@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Models\User;
 use App\Services\Clients\Tenancy;
+use App\Services\Payments\ConfiguredPaymentProvider;
+use App\Services\Payments\PaymentProvider;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -15,6 +17,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(Tenancy::class);
+        $this->app->bind(PaymentProvider::class, ConfiguredPaymentProvider::class);
     }
 
     /**

@@ -29,6 +29,14 @@ class WalletAccount extends Model
                 throw new LogicException('Wallet balances cannot be negative.');
             }
         });
+        static::updating(function ($wallet) {
+            if (! $wallet->isDirty(['client_id', 'currency', 'minor_unit_scale'])) {
+                return;
+            }
+            if ($wallet->available_minor > 0 || $wallet->reserved_minor > 0 || $wallet->entries()->exists()) {
+                throw new LogicException('A wallet with balances or ledger history cannot change its client, currency or minor-unit scale.');
+            }
+        });
     }
 
     public function client()
@@ -44,5 +52,10 @@ class WalletAccount extends Model
     public function entries()
     {
         return $this->hasMany(WalletLedgerEntry::class, 'wallet_id');
+    }
+
+    public function disputes()
+    {
+        return $this->hasMany(BillingDispute::class);
     }
 }

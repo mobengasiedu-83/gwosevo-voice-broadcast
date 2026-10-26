@@ -16,6 +16,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $matrix = [
             'Client Member' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage', 'reports.view'],
             'Super Administrator' => ['billing.manage', 'clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'users.manage', 'audio.manage', 'audio.approve', 'telephony.manage', 'broadcast.operate', 'broadcast.emergency'],
+            'Administrator' => ['billing.manage', 'clients.manage', 'contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'campaigns.approve', 'audit.view', 'telephony.view', 'reports.view', 'operations.view', 'audio.manage', 'audio.approve'],
             'Telephony Administrator' => ['telephony.view', 'telephony.manage'],
             'Campaign Manager' => ['contacts.view', 'contacts.manage', 'campaigns.view', 'campaigns.manage', 'audio.manage'],
             'Approver' => ['campaigns.view', 'campaigns.approve', 'audio.approve'],
