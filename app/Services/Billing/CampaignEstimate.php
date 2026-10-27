@@ -1,0 +1,240 @@
+<?php
+
+namespace App\Services\Billing;
+
+use App\Models\AudioFile;
+use App\Models\Contact;
+use App\Models\ContactConsent;
+use App\Models\ContactGroup;
+use App\Models\User;
+use App\Models\WalletAccount;
+use App\Services\Clients\Tenancy;
+use App\Services\Contacts\Suppression;
+
+/**
+ * Read-only forecast of what one attempt to every eligible recipient would cost.
+ *
+ * The forecast is advisory. Wallet admission at dispatch remains authoritative:
+ * credit is held per call for config('billing.max_call_seconds'), and calls that
+ * are never answered are released without a charge. Retries therefore do not
+ * add credit above one attempt per recipient; they only delay the run.
+ *
+ * Consent evidence is recorded but is not a dialing gate (see
+ * docs/campaign-audio-workflow.md); DND/suppression and deleted contacts are.
+ * The consent count is reported so the client can see coverage without the
+ * eligibility number claiming a rule the dispatcher does not enforce.
+ */
+class CampaignEstimate
+{
+    /** Readiness::snapshot() rejects audiences above this size. */
+    public const MAX_AUDIENCE = 10000;
+
+    /**
+     * @param  array{source_group_id?: mixed, contact_ids?: mixed, audio_id?: mixed, type?: mixed, ivr_flow_id?: mixed}  $input
+     * @return array<string, mixed>
+     */
+    public function preview(User $user, array $input): array
+    {
+        $clientId = app(Tenancy::class)->clientId($user);
+        $audience = $this->audience($user, $clientId, $input);
+
+        $contacts = $audience['ids'] === []
+            ? collect()
+            : Contact::whereIn('id', $audience['ids'])->get(['id', 'phone_e164']);
+
+        $phones = $contacts->pluck('phone_e164')->filter()->unique()->values();
+        $suppressedPhones = $phones->isEmpty()
+            ? collect()
+            : app(Suppression::class)->visible()
+                ->whereIn('phone_e164', $phones->all())
+                ->where('effective_at', '<=', now())
+                ->pluck('phone_e164')
+                ->flip();
+
+        $suppressed = $contacts->filter(fn ($contact) => isset($suppressedPhones[$contact->phone_e164]))->count();
+        $eligible = max(0, $contacts->count() - $suppressed);
+        $unavailable = max(0, count($audience['ids']) - $contacts->count());
+
+        $consents = $contacts->isEmpty() ? 0 : ContactConsent::whereIn('contact_id', $contacts->pluck('id'))
+            ->whereNull('revoked_at')
+            ->where('granted_at', '<=', now())
+            ->distinct()
+            ->count('contact_id');
+
+        $audio = empty($input['audio_id']) ? null : AudioFile::find((int) $input['audio_id']);
+        $duration = $audio?->duration;
+        $minutes = $duration !== null && $duration > 0 ? max(1, (int) ceil($duration / 60)) : null;
+
+        $tariff = $clientId === null ? null : app(Tariffs::class)->snapshot($clientId);
+        $wallet = $clientId === null ? null : WalletAccount::where('client_id', $clientId)->first();
+        $rate = $tariff === null ? null : (int) ($tariff['rate_minor_per_minute'] ?? 0);
+        $currency = $tariff['currency'] ?? $wallet?->currency;
+        $scale = $tariff !== null ? (int) $tariff['minor_unit_scale'] : $wallet?->minor_unit_scale;
+        $comparable = $tariff !== null && $wallet !== null
+            && $tariff['currency'] === $wallet->currency
+            && (int) $tariff['minor_unit_scale'] === $wallet->minor_unit_scale;
+
+        $priced = $minutes !== null && $tariff !== null && $rate > 0;
+        $perCall = $priced ? $minutes * $rate : null;
+        $total = $perCall === null ? null : $eligible * $perCall;
+        $available = $wallet?->available_minor;
+        $additional = $total === null || ! $comparable ? null : max(0, $total - $available);
+        $covered = $additional === null || $perCall < 1 ? null : intdiv($available, $perCall);
+
+        $reason = match (true) {
+            $audience['requested'] === 0 || $contacts->isEmpty() => 'no_audience',
+            $minutes === null => 'audio_missing',
+            $clientId === null => 'internal_campaign',
+            $wallet === null => 'wallet_missing',
+            $tariff === null => 'tariff_missing',
+            ! $comparable => 'currency_mismatch',
+            ! $priced => 'tariff_not_priced',
+            $eligible === 0 => 'no_eligible',
+            default => null,
+        };
+
+        $estimate = [
+            'group_total' => $audience['group_total'],
+            'audience_total' => $contacts->count(),
+            'requested_total' => $audience['requested'],
+            'over_limit' => $audience['over_limit'],
+            'eligible' => $eligible,
+            'suppressed' => $suppressed,
+            'unavailable' => $unavailable,
+            'consent_on_record' => (int) $consents,
+            'duration_seconds' => $duration,
+            'duration_label' => $this->durationLabel($duration),
+            'minutes_per_call' => $minutes,
+            'rate_minor_per_minute' => $rate,
+            'per_call_minor' => $perCall,
+            'total_minor' => $total,
+            'available_minor' => $available,
+            'additional_minor' => $additional,
+            'covered_calls' => $covered,
+            'currency' => $currency,
+            'wallet_currency' => $wallet?->currency,
+            'minor_unit_scale' => $scale,
+            'billing_applicable' => $clientId !== null,
+            'affordable' => $additional === null ? null : $additional === 0,
+            'reason' => $reason,
+            'messages' => [],
+        ];
+
+        $estimate['messages'] = $this->messages($estimate, $reason, $input);
+
+        return $estimate;
+    }
+
+    public static function money(?int $minor, ?int $scale): string
+    {
+        if ($minor === null || $scale === null) {
+            return '0';
+        }
+
+        $scale = max(0, min(6, $scale));
+
+        return number_format((float) Wallet::amount($minor, $scale), $scale, '.', ',');
+    }
+
+    /**
+     * Resolve the audience exactly as Workspace::save() does: explicit IDs plus
+     * the selected active group, deduplicated. Foreign or deleted records are
+     * filtered by the tenant scope and counted as unavailable.
+     *
+     * @return array{ids: array<int, int>, group_total: int, requested: int, over_limit: bool}
+     */
+    private function audience(User $user, ?int $clientId, array $input): array
+    {
+        $ids = collect(explode(',', (string) ($input['contact_ids'] ?? '')))
+            ->map(fn ($value) => trim($value))
+            ->filter(fn ($value) => $value !== '' && ctype_digit($value))
+            ->map(fn ($value) => (int) $value)
+            ->unique()
+            ->values();
+
+        $groupTotal = 0;
+        if (! empty($input['source_group_id'])) {
+            $group = ContactGroup::query()
+                ->when($clientId === null && ! $user->isSuperAdministrator(), fn ($query) => $query->where('owner_id', $user->id))
+                ->where('active', true)
+                ->find((int) $input['source_group_id']);
+            if ($group !== null) {
+                $members = $group->contacts()->pluck('contacts.id')->map(fn ($id) => (int) $id)->unique()->values();
+                $groupTotal = $members->count();
+                $ids = $ids->merge($members)->unique()->values();
+            }
+        }
+
+        $requested = $ids->count();
+
+        return [
+            'ids' => $ids->take(self::MAX_AUDIENCE)->values()->all(),
+            'group_total' => $groupTotal,
+            'requested' => $requested,
+            'over_limit' => $requested > self::MAX_AUDIENCE,
+        ];
+    }
+
+    private function durationLabel(?float $seconds): ?string
+    {
+        if ($seconds === null || $seconds <= 0) {
+            return null;
+        }
+        $total = (int) round($seconds);
+
+        return sprintf('%d:%02d', intdiv($total, 60), $total % 60);
+    }
+
+    /**
+     * @return array<int, array{tone: string, text: string}>
+     */
+    private function messages(array $estimate, ?string $reason, array $input): array
+    {
+        $messages = [];
+
+        if ($estimate['over_limit']) {
+            $messages[] = ['tone' => 'warning', 'text' => sprintf(
+                'The audience has %s contacts. A campaign can hold %s recipients, so this forecast covers the first %s. Reduce the group before saving.',
+                number_format($estimate['requested_total']),
+                number_format(self::MAX_AUDIENCE),
+                number_format(self::MAX_AUDIENCE),
+            )];
+        }
+
+        $explanation = match ($reason) {
+            'no_audience' => 'Choose a contact group or add contact IDs to forecast credit.',
+            'audio_missing' => 'Select an approved recording to price one attempt per contact.',
+            'internal_campaign' => 'Internal campaign: calls are not billed to a client wallet. Audience eligibility is shown for reference.',
+            'wallet_missing' => 'This account has no wallet. Finance must open and fund one before calls can be admitted.',
+            'tariff_missing' => 'No approved call tariff is assigned. Admission will refuse calls until Finance assigns a rate plan.',
+            'currency_mismatch' => 'The wallet currency or minor-unit scale does not match the assigned tariff. Finance must reconcile it before launch.',
+            'tariff_not_priced' => 'The assigned tariff has no positive per-minute rate.',
+            'no_eligible' => 'No contacts are eligible. Every selected contact is on the DND/suppression list or no longer exists.',
+            default => null,
+        };
+
+        if ($explanation !== null) {
+            $messages[] = [
+                'tone' => in_array($reason, ['no_audience', 'audio_missing', 'internal_campaign'], true) ? 'info' : 'warning',
+                'text' => $explanation,
+            ];
+        }
+
+        if (($input['type'] ?? 'one_way') === 'interactive') {
+            $messages[] = ['tone' => 'info', 'text' => 'Interactive campaigns can play extra IVR prompts. Only the selected recording is priced here; billing follows each answered call’s duration.'];
+        }
+
+        if ($estimate['additional_minor'] !== null && $estimate['additional_minor'] > 0) {
+            $messages[] = ['tone' => 'warning', 'text' => sprintf(
+                'Available credit covers %s of %s one-attempt calls. Add %s %s to call every eligible contact once.',
+                number_format((int) $estimate['covered_calls']),
+                number_format($estimate['eligible']),
+                self::money($estimate['additional_minor'], $estimate['minor_unit_scale']),
+                $estimate['currency'] ?? '',
+            )];
+        }
+
+        return $messages;
+    }
+}
+

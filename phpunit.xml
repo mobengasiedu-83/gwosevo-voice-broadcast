@@ -20,6 +20,7 @@
     <php>
         <env name="VOICE_BROADCAST_MEDIA_MODE" value="pbx" force="true"/>
         <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_URL" value="http://localhost" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
         <env name="BCRYPT_ROUNDS" value="4" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null" force="true"/>
@@ -36,6 +37,7 @@
         <!-- phpdotenv reads $_SERVER before $_ENV, so shell exports must be overridden here too. -->
         <server name="VOICE_BROADCAST_MEDIA_MODE" value="pbx"/>
         <server name="APP_ENV" value="testing"/>
+        <server name="APP_URL" value="http://localhost"/>
         <server name="APP_MAINTENANCE_DRIVER" value="file"/>
         <server name="BCRYPT_ROUNDS" value="4"/>
         <server name="BROADCAST_CONNECTION" value="null"/>

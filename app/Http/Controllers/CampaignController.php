@@ -8,6 +8,7 @@ use App\Models\CampaignRun;
 use App\Models\CampaignTemplate;
 use App\Models\ContactGroup;
 use App\Models\IvrFlow;
+use App\Services\Billing\CampaignEstimate;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\Readiness;
 use App\Services\Campaigns\Workspace;
@@ -73,7 +74,45 @@ class CampaignController extends Controller
             abort_if($campaign->archived_at || ! in_array($campaign->status, ['draft', 'ready'], true), 422, 'Only draft or ready campaigns can be edited. Duplicate a completed campaign for a new run.');
         }
 
-        return response()->view('campaigns.edit', ['campaign' => $campaign, 'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(), 'trunk' => $r->user()->clientMembership()->exists() ? null : $w->configuredTrunk(), 'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(), 'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get()])->header('Cache-Control', 'private, no-store');
+        $config = $campaign?->configuration ?? [];
+        $estimate = app(CampaignEstimate::class)->preview($r->user(), [
+            'source_group_id' => $r->old('source_group_id', $config['source_group_id'] ?? null),
+            'contact_ids' => $r->old('contact_ids', implode(', ', $config['explicit_contact_ids'] ?? (empty($config['source_group_id']) ? ($config['contact_ids'] ?? []) : []))),
+            'audio_id' => $r->old('audio_id', $config['audio_id'] ?? null),
+            'type' => $r->old('type', $campaign?->type ?? 'one_way'),
+            'ivr_flow_id' => $r->old('ivr_flow_id', $config['ivr_flow_id'] ?? null),
+        ]);
+
+        return response()->view('campaigns.edit', [
+            'campaign' => $campaign,
+            'audio' => AudioFile::whereNotNull('uuid')->latest('id')->get(),
+            'trunk' => $r->user()->clientMembership()->exists() ? null : $w->configuredTrunk(),
+            'flows' => IvrFlow::where('status', 'approved')->whereNotNull('deployed_at')->get(),
+            'groups' => ContactGroup::when(app(Tenancy::class)->current() === null && ! $r->user()->isSuperAdministrator(), fn ($q) => $q->where('owner_id', $r->user()->id))->where('active', true)->get(),
+            'estimate' => $estimate,
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * Live credit forecast for the campaign editor. Read-only and advisory:
+     * Wallet admission remains the authority at dispatch.
+     */
+    public function estimate(Request $r)
+    {
+        Gate::authorize('campaigns.manage');
+        $d = $r->validate([
+            'source_group_id' => 'nullable|integer',
+            'contact_ids' => 'nullable|string|max:100000',
+            'audio_id' => 'nullable|integer',
+            'type' => 'nullable|in:one_way,interactive',
+            'ivr_flow_id' => 'nullable|integer',
+        ]);
+        $estimate = app(CampaignEstimate::class)->preview($r->user(), $d);
+
+        return response()->json([
+            'estimate' => $estimate,
+            'html' => view('campaigns._estimate', ['estimate' => $estimate])->render(),
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     public function save(Request $r, Workspace $w, ?Campaign $campaign = null)

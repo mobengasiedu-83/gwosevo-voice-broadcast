@@ -341,6 +341,9 @@ Route::middleware('auth')
         Route::get('/runs', [$c, 'runs'])
             ->name('runs');
 
+        Route::get('/estimate', [$c, 'estimate'])
+            ->name('estimate');
+
         Route::get('/{campaign}', [$c, 'show'])
             ->whereNumber('campaign')
             ->name('show');

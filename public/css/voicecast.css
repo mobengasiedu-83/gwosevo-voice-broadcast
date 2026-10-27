@@ -51,3 +51,13 @@ html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item:hover{backg
 #sidebar:has(.admin-nav-group) .brand small{font-size:10px;margin-top:6px}
 #sidebar:has(.admin-nav-group) .nav-eyebrow{font-size:9px;letter-spacing:1.7px;margin-top:12px}
 @media(prefers-reduced-motion:reduce){html[data-portal-design] #sidebar .admin-nav-group>summary,#sidebar .admin-nav-group>summary .admin-nav-chevron{transition:none}}
+
+/* Campaign credit forecast cards (Create/Edit campaign). */
+.campaign-estimate{margin-bottom:20px}
+.campaign-estimate>p:not(.notice){font-size:12px;line-height:1.6;margin-top:10px;color:var(--muted)}
+.campaign-estimate-grid{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px}
+.campaign-estimate-grid .kpi>strong{font-size:22px;overflow-wrap:anywhere}
+.campaign-estimate-grid .kpi>small{display:block;line-height:1.5}
+@media(max-width:1150px){.campaign-estimate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.campaign-estimate-grid{grid-template-columns:1fr}}
+
