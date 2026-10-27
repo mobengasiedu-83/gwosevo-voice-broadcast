@@ -108,7 +108,7 @@ class SimplifiedFlowTest extends TestCase
         $this->actingAs($this->admin)->get('/telephony')->assertOk()
             ->assertSee('Outbound caller IDs')->assertSee('Allowlisted agent destinations')
             ->assertDontSee('id="flow-builder"', false)->assertDontSee('<h2>IVR versions</h2>', false);
-        $this->get('/interactive')->assertOk()->assertSee('id="flow-builder"', false)
+        $this->get('/interactive')->assertOk()->assertSee('id="flow-builder"', false)->assertSee('Visual IVR builder')->assertSee('Component properties')->assertSee('ivr-connections')->assertSee('Save draft version')
             ->assertSee('<h2>IVR versions</h2>', false)->assertDontSee('Outbound caller IDs');
         $this->actingAs($this->manager)->get('/telephony')->assertForbidden();
         $this->get('/interactive')->assertOk();

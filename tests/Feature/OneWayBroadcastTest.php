@@ -724,7 +724,7 @@ class OneWayBroadcastTest extends TestCase
         $checksum = hash('sha256', app(IvrCompiler::class)->compile($flow));
         $this->post('/interactive/flows/'.$flow->id.'/deploy', ['checksum' => $checksum, 'evidence' => 'PBX test'])->assertRedirect();
         $this->get('/interactive/flows/'.$flow->id.'/dialplan')->assertOk();
-        $this->actingAs($this->manager)->get('/interactive')->assertOk()->assertSee('Flow builder');
+        $this->actingAs($this->manager)->get('/interactive')->assertOk()->assertSee('Visual IVR builder');
     }
 
     public function test_phase_four_migration_is_resumable_without_losing_flow_data(): void
