@@ -1,0 +1,1 @@
+cd /var/www/vhosts/voicecast.gwosevo.com/httpdocs/gwosevo-voice-broadcast && /opt/plesk/php/8.4/bin/php artisan schedule:run

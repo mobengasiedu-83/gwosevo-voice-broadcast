@@ -48,6 +48,7 @@ class WalletModuleTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config()->set('billing.max_call_seconds', 900);
         $this->seed(RolesAndPermissionsSeeder::class);
         $this->travelTo(CarbonImmutable::parse('2026-10-26T12:00:00.000000Z'));
         config()->set('call_rating.trusted_sources', ['verified-cel']);

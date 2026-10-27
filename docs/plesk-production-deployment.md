@@ -2,13 +2,16 @@
 
 Reviewed 27 October 2026. This is a Linux Plesk runbook, not proof of production readiness. Confirm the OS, subscription user, actual project root, available PHP handler and service names before executing it. Portal deployment for controlled acceptance is distinct from enabling live calls or payments.
 
+> **Deploying today?** Follow `docs/deployment-runbook-voicecast.md` first — it has the concrete values for this host (`/var/www/vhosts/voicecast.gwosevo.com/httpdocs/gwosevo-voice-broadcast`), the exact release commands, the service units and the go-live flag sequence. This document explains the underlying reasoning and risks.
+
+
 ## Plesk setup
 
 1. Create/configure voicecast.gwosevo.com and its DNS. Install a valid certificate, select it for the domain, enable HTTPS redirection and check certificate renewal.
 2. Put the repository outside its own public web root. Set Hosting Settings → Document root to the repository's public directory (e.g. voicecast.gwosevo.com/httpdocs/public, depending on subscription layout). Do not add /public to APP_URL.
-3. Select Plesk PHP 8.3 FPM with Apache proxy mode for the simplest use of public/.htaccess. If using nginx-only FPM, configure/test Laravel front-controller routing through Plesk-supported settings instead. Do not copy the standalone port-85 Apache/nginx templates over Plesk's generated vhosts.
+3. Select Plesk PHP 8.4 FPM with Apache proxy mode for the simplest use of public/.htaccess. If using nginx-only FPM, configure/test Laravel front-controller routing through Plesk-supported settings instead. Do not copy the standalone port-85 Apache/nginx templates over Plesk's generated vhosts.
 4. Use the Plesk subscription system user for deployment, FPM ownership and background workers. Do not recursively chown this site to the old gwosevo user or replace Plesk ownership on the subscription.
-5. Check PHP extensions with Composer platform requirements. MySQL PDO, mbstring, XML, curl, zip and required PHP packages must be present; Horizon also needs redis, pcntl and posix in CLI. CLI and FPM must use compatible PHP/extensions. Use the actual Plesk PHP executable, for example /opt/plesk/php/8.3/bin/php.
+5. Check PHP extensions with Composer platform requirements. MySQL PDO, mbstring, XML, curl, zip and required PHP packages must be present; Horizon also needs redis, pcntl and posix in CLI. CLI and FPM must use compatible PHP/extensions. Use the actual Plesk PHP executable, for example /opt/plesk/php/8.4/bin/php.
 6. Create the application database/user in Plesk and install/configure a local or secured Redis service. Set upload limits to match the application's audio/import limits; test uploads through both nginx and FPM.
 7. Restrict AMI network access to the application host and approved PBX; keep Redis/database private. Exclude/redact credential-bearing /pbx-media/ and internal-test-media URLs in proxy, web-server and monitoring logs. Verify the PBX can fetch HTTPS protected media with a trusted certificate.
 
@@ -47,8 +50,8 @@ Run these commands as the subscription user, from the real application directory
 
 ```bash
 set -e
-APP=/var/www/vhosts/REPLACE_SUBSCRIPTION/REPLACE_PROJECT
-PHP=/opt/plesk/php/8.3/bin/php
+APP=/var/www/vhosts/voicecast.gwosevo.com/httpdocs/gwosevo-voice-broadcast
+PHP=/opt/plesk/php/8.4/bin/php
 COMPOSER=/usr/lib/plesk-9.0/composer.phar
 cd "$APP"
 
@@ -113,7 +116,7 @@ sudo systemctl enable --now voicecast-ami-gateway.service
 In Plesk Scheduled Tasks add one non-chrooted subscription-user command every minute (or use Laravel Toolkit scheduling, or the adapted repository timer — choose ONE):
 
 ```
-cd /ABSOLUTE/APP/ROOT && /opt/plesk/php/8.3/bin/php artisan schedule:run
+cd /ABSOLUTE/APP/ROOT && /opt/plesk/php/8.4/bin/php artisan schedule:run
 ```
 
 Enable failure notifications for the scheduled task. Chrooted shells may need host-specific path adjustments. Do not enable a second generic Plesk queue worker alongside Horizon for the same deployment. The existing schedule handles campaign activation, dashboard probes, event/identity pruning and configured hourly hold cleanup.
@@ -133,10 +136,10 @@ Perform restarts only after the call-drain/reconciliation step. Configure an aut
 ```bash
 curl --fail --silent --show-error https://voicecast.gwosevo.com/up
 # From application directory as subscription user:
-/opt/plesk/php/8.3/bin/php artisan horizon:status
-/opt/plesk/php/8.3/bin/php artisan schedule:list
-/opt/plesk/php/8.3/bin/php artisan broadcast:status
-/opt/plesk/php/8.3/bin/php artisan queue:failed
+/opt/plesk/php/8.4/bin/php artisan horizon:status
+/opt/plesk/php/8.4/bin/php artisan schedule:list
+/opt/plesk/php/8.4/bin/php artisan broadcast:status
+/opt/plesk/php/8.4/bin/php artisan queue:failed
 ```
 
 Check systemd journal and Laravel logs, HTTPS/redirection, login, role/client isolation, upload/preview, queued import, real OTP/notifications, minute scheduler execution and client wallet/tariff prerequisites. /up proves application boot, not PBX/billing/provider readiness. Validate audible playback, DTMF/timeout/opt-out/transfer, disconnect/reconnect, emergency stop, trusted timing and wallet settlement/release before enabling dispatch. Verify provider contract/callback/refund reconciliation before enabling top-ups. Re-cache config and restart services after flag changes.
@@ -148,3 +151,5 @@ If deployment fails, keep dispatch disabled and the site in maintenance until re
 - Plesk Laravel Toolkit: https://doc.plesk.com/en-US/obsidian/administrator-guide/website-management/laravel-toolkit.80010/
 - Plesk document root: https://support.plesk.com/hc/en-us/articles/12377087631255-How-to-change-the-document-root-for-a-single-domain-on-Plesk
 - Plesk scheduler: https://support.plesk.com/hc/en-us/articles/12377989953303-How-to-enable-scheduled-tasks-for-Laravel-project-in-Laravel-Toolkit
+
+Confirmed deployment identity: subscription user `voicecast.gwosevo.co_bpehug59avj`, PHP `/opt/plesk/php/8.4/bin/php`, application `/var/www/vhosts/voicecast.gwosevo.com/httpdocs/gwosevo-voice-broadcast`. SSH authentication must succeed before this host can be inspected or deployed. Credentials are not stored in this document.

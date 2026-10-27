@@ -120,6 +120,11 @@ class CampaignEstimate
             'messages' => [],
         ];
 
+        $admission = app(Wallet::class)->admission($clientId, $tariff);
+        $estimate['can_start_call'] = $admission['allowed'];
+        $estimate['call_hold_minor'] = $admission['exposure_minor'];
+        $estimate['admission_reason'] = $admission['reason'];
+
         $estimate['messages'] = $this->messages($estimate, $reason, $input);
 
         return $estimate;
@@ -234,7 +239,12 @@ class CampaignEstimate
             )];
         }
 
+        if ($estimate['billing_applicable'] && ! $estimate['can_start_call']) {
+            $messages[] = ['tone' => 'warning', 'text' => 'New calls cannot start: '.Wallet::clientMessage($estimate['admission_reason'])];
+        } elseif ($estimate['billing_applicable'] && $estimate['call_hold_minor'] > 0) {
+            $messages[] = ['tone' => 'info', 'text' => 'Each new call temporarily requires '.self::money($estimate['call_hold_minor'], $estimate['minor_unit_scale']).' '.$estimate['currency'].' for its maximum call hold, even if the recording costs less.'];
+        }
+
         return $messages;
     }
 }
-

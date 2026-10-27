@@ -84,6 +84,18 @@ class CampaignEstimateTest extends TestCase
         ], $params)));
     }
 
+    public function test_audio_budget_does_not_imply_enough_credit_for_admission(): void
+    {
+        config()->set('billing.max_call_seconds', 900);
+        $this->tariff();
+        $this->wallet('1.00');
+        $this->estimate()->assertOk()->assertJsonPath('estimate.affordable', true)
+            ->assertJsonPath('estimate.can_start_call', false)
+            ->assertJsonPath('estimate.call_hold_minor', 450)
+            ->assertJsonPath('estimate.admission_reason', 'insufficient_credit')
+            ->assertSee('New calls cannot start');
+    }
+
     public function test_it_prices_one_attempt_for_each_eligible_contact(): void
     {
         $this->tariff();
@@ -159,7 +171,6 @@ class CampaignEstimateTest extends TestCase
             ->assertJsonPath('estimate.total_minor', 60);
     }
 
-
     public function test_it_does_not_forecast_another_accounts_audience(): void
     {
         $this->tariff();
@@ -213,7 +224,6 @@ class CampaignEstimateTest extends TestCase
             ->assertJsonPath('estimate.additional_minor', null);
     }
 
-
     public function test_create_page_renders_the_forecast_cards(): void
     {
         $this->tariff();
@@ -260,4 +270,3 @@ class CampaignEstimateTest extends TestCase
         $this->actingAs($auditor)->getJson(route('campaigns.estimate'))->assertForbidden();
     }
 }
-
