@@ -438,9 +438,10 @@ class OneWayBroadcastTest extends TestCase
         $this->gateway->session($ami, function () use (&$iterations) {
             return ++$iterations > 5;
         });
+        $this->assertNotContains('QueueStatus', array_column($ami->sent, 'Action'));
         $this->assertTrue($this->gateway->pongVerified);
         $this->assertTrue($this->gateway->snapshotVerified);
-        $this->assertSame(['Ping', 'CoreShowChannels', 'QueueStatus'], array_column($ami->sent, 'Action'));
+        $this->assertSame(['Ping', 'CoreShowChannels'], array_column($ami->sent, 'Action'));
     }
 
     public function test_subsecond_campaign_cps_cannot_be_bypassed_by_timestamp_truncation(): void
@@ -496,7 +497,7 @@ class OneWayBroadcastTest extends TestCase
             return ++$iterations > 5;
         });
         $this->assertTrue($this->gateway->snapshotVerified);
-        $this->assertSame(['Ping', 'CoreShowChannels', 'QueueStatus', 'Status'], array_column($ami->sent, 'Action'));
+        $this->assertSame(['Ping', 'CoreShowChannels', 'Status'], array_column($ami->sent, 'Action'));
     }
 
     public function test_rejected_channel_inventory_never_marks_gateway_healthy(): void

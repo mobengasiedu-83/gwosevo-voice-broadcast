@@ -8,7 +8,6 @@ use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
 use App\Models\TrunkProfile;
 use App\Services\Clients\Tenancy;
-use App\Services\Dashboard\QueueTelemetry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -19,16 +18,6 @@ class Gateway
     public string $owner;
 
     private array $snapshot = [];
-
-    private array $queueFrames = [];
-
-    private array $queueDeltas = [];
-
-    private string $queueAction = '';
-
-    private float $queueRequested = 0;
-
-    private bool $queuesAllowed = true;
 
     private string $snapshotId = '';
 
@@ -76,9 +65,6 @@ class Gateway
     {
         $this->events->replay();
         $ami->connect();
-        $this->queueAction = '';
-        $this->queueRequested = 0;
-        $this->queuesAllowed = true;
         $this->lastPong = microtime(true);
         $this->pongVerified = false;
         $this->snapshotVerified = false;
@@ -127,31 +113,6 @@ class Gateway
                 if (str_starts_with($f['ActionID'] ?? '', 'auth-') && isset($f['Response'])) {
                     $this->authorized($ami, substr($f['ActionID'], 5), $f['Response'] === 'Success');
                 }
-                $telemetry = app(QueueTelemetry::class);
-                if ($this->queueAction !== '' && ($f['ActionID'] ?? '') === $this->queueAction) {
-                    if (($f['Response'] ?? '') === 'Error') {
-                        $telemetry->state('unavailable');
-                        $this->queuesAllowed = false;
-                        $this->queueAction = '';
-                    } elseif (($f['Event'] ?? '') === 'QueueStatusComplete') {
-                        $telemetry->snapshot($this->queueFrames, $this->queueDeltas);
-                        $this->queueAction = '';
-                    } elseif (in_array($f['Event'] ?? '', ['QueueParams', 'QueueMember'], true)) {
-                        $this->queueFrames[] = $f;
-                        if (count($this->queueFrames) > 10000) {
-                            throw new RuntimeException('Queue inventory exceeds safety bound.');
-                        }
-                    }
-                } elseif (in_array($f['Event'] ?? '', ['QueueMemberAdded', 'QueueMemberRemoved', 'QueueMemberStatus', 'QueueMemberPause', 'QueueCallerJoin', 'QueueCallerLeave'], true)) {
-                    if ($this->queueAction !== '') {
-                        $this->queueDeltas[] = $f;
-                    } else {
-                        $telemetry->event($f);
-                    }
-                    if (count($this->queueDeltas) > 10000) {
-                        throw new RuntimeException('Queue delta buffer exceeds safety bound.');
-                    }
-                }
                 $this->events->ingest($f);
             }
             if (microtime(true) - $this->lastPong > 15) {
@@ -169,18 +130,6 @@ class Gateway
                 $this->snapshotId = 'snapshot-'.Str::uuid();
                 $this->snapshotRequested = microtime(true);
                 $ami->send(['Action' => $this->snapshotAction, 'ActionID' => $this->snapshotId]);
-            }
-            if ($this->queuesAllowed && $this->queueAction === '' && microtime(true) - $this->queueRequested > 30) {
-                $this->queueFrames = [];
-                $this->queueDeltas = [];
-                $this->queueAction = 'queues-'.Str::uuid();
-                $this->queueRequested = microtime(true);
-                $ami->send(['Action' => 'QueueStatus', 'ActionID' => $this->queueAction]);
-            }
-            if ($this->queueAction !== '' && microtime(true) - $this->queueRequested > 10) {
-                app(QueueTelemetry::class)->state('unavailable');
-                $this->queuesAllowed = false;
-                $this->queueAction = '';
             }
             if (! config('voice_broadcast.observe_only', false)) {
                 $this->hangups($ami);

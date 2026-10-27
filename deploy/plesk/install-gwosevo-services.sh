@@ -23,10 +23,10 @@ fi
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUP=/etc/systemd/system/gwosevo-backup-$STAMP
 mkdir -m 700 "$BACKUP"
-for name in voicecast-horizon.service voicecast-ami-gateway.service gwosevo-horizon.service gwosevo-ami-gateway.service gwosevo-scheduler.service gwosevo-scheduler.timer; do
+for name in voicecast-horizon.service voicecast-ami-gateway.service gwosevo-horizon.service gwosevo-queue-monitor.service gwosevo-ami-gateway.service gwosevo-scheduler.service gwosevo-scheduler.timer; do
     [[ ! -f /etc/systemd/system/$name ]] || cp -a "/etc/systemd/system/$name" "$BACKUP/"
 done
-for pair in 'horizon:horizon' 'ami-gateway:broadcast:gateway'; do
+for pair in 'horizon:horizon' 'ami-gateway:broadcast:gateway' 'queue-monitor:dashboard:queues'; do
     name=${pair%%:*}; command=${pair#*:}
     cat > "/etc/systemd/system/gwosevo-$name.service" <<UNIT
 [Unit]
@@ -78,15 +78,15 @@ Unit=gwosevo-scheduler.service
 [Install]
 WantedBy=timers.target
 UNIT
-systemd-analyze verify /etc/systemd/system/gwosevo-{ami-gateway,horizon,scheduler}.service /etc/systemd/system/gwosevo-scheduler.timer
+systemd-analyze verify /etc/systemd/system/gwosevo-{ami-gateway,queue-monitor,horizon,scheduler}.service /etc/systemd/system/gwosevo-scheduler.timer
 systemctl daemon-reload
 # Replace the old named services; never run both copies.
 for old in voicecast-horizon.service voicecast-ami-gateway.service; do
     if systemctl cat "$old" >/dev/null 2>&1; then systemctl disable --now "$old"; fi
 done
-systemctl enable --now gwosevo-horizon.service gwosevo-ami-gateway.service gwosevo-scheduler.timer
+systemctl enable --now gwosevo-horizon.service gwosevo-queue-monitor.service gwosevo-ami-gateway.service gwosevo-scheduler.timer
 systemctl start gwosevo-scheduler.service
-systemctl --no-pager --full status gwosevo-horizon.service gwosevo-ami-gateway.service gwosevo-scheduler.timer
+systemctl --no-pager --full status gwosevo-horizon.service gwosevo-queue-monitor.service gwosevo-ami-gateway.service gwosevo-scheduler.timer
 systemctl --no-pager --full show gwosevo-scheduler.service -p Result -p ExecMainStatus
 systemctl list-timers gwosevo-scheduler.timer --no-pager
 printf 'Unit backups: %s\n' "$BACKUP"

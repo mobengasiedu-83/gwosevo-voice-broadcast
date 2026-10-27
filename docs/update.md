@@ -85,3 +85,85 @@ sudo find . -type d -exec chmod 755 {} \;
 sudo find . -type f -exec chmod 644 {} \;
 sudo chmod 600 .env
 sudo chmod -R u+rwX,go-rwx storage bootstrap/cache
+
+### Production deployment on Plesk
+
+cd /var/www/vhosts/voicecast.gwosevo.com/httpdocs/gwosevo-voice-broadcast
+
+set -e
+
+USER="voicecast.gwosevo.co_bpehug59avj"
+PHP="/opt/plesk/php/8.4/bin/php"
+
+echo "=== INSTALL DEPENDENCIES ==="
+sudo -u "$USER" composer install \
+ --no-dev \
+ --prefer-dist \
+ --no-interaction \
+ --optimize-autoloader
+
+echo "=== RUN DATABASE MIGRATIONS ==="
+sudo -u "$USER" "$PHP" artisan migrate --force
+
+echo "=== SEED ROLES AND PERMISSIONS ==="
+sudo -u "$USER" "$PHP" artisan db:seed \
+ --class=RolesAndPermissionsSeeder \
+ --force
+
+echo "=== CLEAR OLD CACHES ==="
+sudo -u "$USER" "$PHP" artisan optimize:clear
+
+echo "=== REBUILD PRODUCTION CACHES ==="
+sudo -u "$USER" "$PHP" artisan config:cache
+sudo -u "$USER" "$PHP" artisan route:cache
+sudo -u "$USER" "$PHP" artisan view:cache
+
+echo "=== RESTART QUEUE WORKERS ==="
+sudo -u "$USER" "$PHP" artisan queue:restart
+
+echo "=== VERIFY APPLICATION ==="
+sudo -u "$USER" "$PHP" artisan about --only=environment
+
+echo "=== ENSURE APPLICATION IS ONLINE ==="
+sudo -u "$USER" "$PHP" artisan up
+
+echo "=== UPDATE COMPLETED ==="
+
+which composer
+composer --version
+
+### Verify VoiceCast
+
+curl -I https://voicecast.gwosevo.com/up
+
+or
+
+curl -s -o /dev/null \
+ -w "HTTP %{http_code}\n" \
+ https://voicecast.gwosevo.com/up
+
+then
+
+sudo -u voicecast.gwosevo.co_bpehug59avj \
+ /opt/plesk/php/8.4/bin/php artisan broadcast:status
+
+and
+
+tail -n 50 storage/logs/laravel.log
+
+### Optimize after successful verification
+
+sudo -u voicecast.gwosevo.co_bpehug59avj \
+ /opt/plesk/php/8.4/bin/php artisan optimize
+
+### Permissions
+
+cd /var/www/vhosts/voicecast.gwosevo.com/httpdocs/gwosevo-voice-broadcast
+
+chown -R voicecast.gwosevo.co_bpehug59avj:psacln \
+ storage bootstrap/cache
+
+find storage bootstrap/cache -type d -exec chmod 750 {} \;
+find storage bootstrap/cache -type f -exec chmod 640 {} \;
+
+chmod 600 .env
