@@ -30,7 +30,7 @@ Campaign readiness and launch, including older campaigns without a saved trunk I
 - Approved: audio is available for campaigns. A telephony administrator records actual PBX installation checksum/evidence separately; approval never fabricates deployment.
 - All authorized viewers may preview/download WAVs. Preview supports HTTP byte ranges, is authenticated and uses private/no-store responses.
 
-Uploads retain the existing 8 kHz mono, 16-bit PCM WAV validation, canonicalization, size/duration limits and checksum verification.
+Uploads accept common audio formats and automatically convert incompatible recordings to 8 kHz mono, 16-bit PCM WAV before review. Output retains canonicalization, size/duration limits and checksum verification. See [automatic audio conversion](automatic-audio-conversion.md) for setup and processing states.
 
 ## Super Administrator
 

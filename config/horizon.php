@@ -197,9 +197,21 @@ return [
     */
 
     'defaults' => [
+        'supervisor-audio' => [
+            'connection' => 'redis',
+            'queue' => ['audio-conversion'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 1,
+            'timeout' => 60,
+            'nice' => 0,
+        ],
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['dashboard-health','default'],
+            'queue' => ['dashboard-health', 'default'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
@@ -214,6 +226,7 @@ return [
 
     'environments' => [
         'production' => [
+            'supervisor-audio' => ['maxProcesses' => 2],
             'supervisor-1' => [
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
@@ -222,6 +235,7 @@ return [
         ],
 
         'local' => [
+            'supervisor-audio' => ['maxProcesses' => 1],
             'supervisor-1' => [
                 'maxProcesses' => 3,
             ],

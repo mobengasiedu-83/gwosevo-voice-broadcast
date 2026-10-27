@@ -4,7 +4,7 @@ Reviewed against Module 10 of the supplied 25 October 2026 Installation and Deve
 
 ## Implementation
 
-The existing audio service validates RIFF chunks, PCM format, duration and size, discards metadata, stores canonical 8 kHz mono 16-bit WAV privately and creates a Pending account-owned record. Approval verifies the stored checksum, records the internal reviewer and makes matching account-owned draft campaigns Ready. Existing media, consent/DND, scheduling and capacity checks still apply before dispatch; Ready does not itself launch a call.
+The audio service accepts common formats, queues incompatible recordings for conversion, validates the resulting RIFF chunks, PCM format, duration and size, discards metadata, and stores canonical 8 kHz mono 16-bit WAV privately. Recordings become Pending after successful processing; conversion failures show an actionable error. See [automatic audio conversion](automatic-audio-conversion.md). Approval verifies the stored checksum, records the internal reviewer and makes matching account-owned draft campaigns Ready. Existing media, consent/DND, scheduling and capacity checks still apply before dispatch; Ready does not itself launch a call.
 
 This review adds account-scoped recording search and Pending/Approved/Rejected totals with private/no-store responses. Client instructions explain internal review, while staff retain approval and PBX deployment controls. Client upload limits now reflect configured byte/duration limits.
 

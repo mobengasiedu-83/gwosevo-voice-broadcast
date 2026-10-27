@@ -2,6 +2,7 @@
 
 namespace App\Services\Broadcast;
 
+use App\Jobs\ConvertAudio;
 use App\Models\AudioFile;
 use App\Models\Campaign;
 use App\Models\User;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AudioLibrary
 {
@@ -22,57 +24,38 @@ class AudioLibrary
         Gate::forUser($actor)->authorize('audio.manage');
         Validator::make(['name' => $name], ['name' => 'required|string|max:255'])->validate();
         $ready = app(Readiness::class);
-        if ($file->getSize() > config('voice_broadcast.max_audio_bytes') || ! in_array($file->getMimeType(), ['audio/wav', 'audio/x-wav', 'audio/vnd.wave'], true)) {
-            $ready->fail('Upload a PCM WAV file within the size limit.');
+        if (! $file->isValid() || $file->getSize() > config('voice_broadcast.max_audio_bytes') || $file->getSize() < 1) {
+            $ready->fail('Upload an audio file within the size limit.');
         }
-        $bytes = file_get_contents($file->getRealPath());
-        if (strlen($bytes) < 44 || substr($bytes, 0, 4) !== 'RIFF' || substr($bytes, 8, 4) !== 'WAVE' || unpack('V', substr($bytes, 4, 4))[1] + 8 !== strlen($bytes)) {
-            $ready->fail('Invalid WAV container.');
+        $extensions = ['wav', 'mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'aif', 'aiff', 'wma', 'webm'];
+        $mime = $file->getMimeType();
+        if (! in_array(strtolower($file->getClientOriginalExtension()), $extensions, true) ||
+            (! str_starts_with($mime ?? '', 'audio/') && ! in_array($mime, ['video/mp4', 'video/webm', 'video/x-ms-asf', 'video/x-ms-wmv', 'application/vnd.ms-asf', 'application/ogg', 'application/octet-stream'], true))) {
+            $ready->fail('Upload WAV, MP3, M4A, AAC, OGG, Opus, FLAC, AIFF, WMA or WebM audio.');
         }
-        $fmt = null;
-        $data = null;
-        $offset = 12;
-        while ($offset + 8 <= strlen($bytes)) {
-            $id = substr($bytes, $offset, 4);
-            $size = unpack('V', substr($bytes, $offset + 4, 4))[1];
-            $offset += 8;
-            if ($size > strlen($bytes) - $offset) {
-                $ready->fail('Truncated WAV data.');
+        $pcm = null;
+        if (in_array($mime, ['audio/wav', 'audio/x-wav', 'audio/vnd.wave'], true)) {
+            try {
+                $pcm = app(PcmWav::class)->read($file->getRealPath());
+            } catch (ValidationException $e) {
+                // Other WAV sample rates, channels and encodings are converted too.
             }
-            if ($id === 'fmt ') {
-                if ($fmt !== null) {
-                    $ready->fail('Duplicate WAV format.');
-                } $fmt = substr($bytes, $offset, $size);
-            }
-            if ($id === 'data') {
-                if ($data !== null) {
-                    $ready->fail('Duplicate WAV audio data.');
-                } $data = substr($bytes, $offset, $size);
-            }
-            $offset += $size + ($size % 2);
         }
-        if ($offset !== strlen($bytes) || $fmt === null || strlen($fmt) < 16 || $data === null || strlen($data) === 0 || strlen($data) % 2) {
-            $ready->fail('WAV requires complete format and audio chunks.');
-        }
-        $f = unpack('vformat/vchannels/Vrate/Vbyterate/valign/vbits', substr($fmt, 0, 16));
-        if ($f !== ['format' => 1, 'channels' => 1, 'rate' => 8000, 'byterate' => 16000, 'align' => 2, 'bits' => 16]) {
-            $ready->fail('Audio must be 8 kHz mono 16-bit PCM WAV. Convert it before upload.');
-        }
-        $duration = strlen($data) / 16000;
-        if ($duration > config('voice_broadcast.max_audio_seconds')) {
-            $ready->fail('Audio exceeds the duration limit.');
-        }
-        // Canonicalize: discard metadata/unknown chunks; only verified PCM bytes enter the PBX artifact.
-        $canonical = 'RIFF'.pack('V', 36 + strlen($data)).'WAVEfmt '.pack('V', 16).substr($fmt, 0, 16).'data'.pack('V', strlen($data)).$data;
         $uuid = (string) Str::uuid();
-        $key = 'broadcast/audio/'.$uuid.'.wav';
-        if (! Storage::disk('local')->put($key, $canonical)) {
+        $key = $pcm ? 'broadcast/audio/'.$uuid.'.wav' : 'broadcast/audio-sources/'.$uuid.'.source';
+        if (! Storage::disk('local')->put($key, $pcm ? $pcm['bytes'] : file_get_contents($file->getRealPath()))) {
             $ready->fail('Could not store private audio.');
         }
         try {
-            return DB::transaction(function () use ($actor, $name, $duration, $uuid, $key, $canonical) {
-                $audio = AudioFile::create(['uuid' => $uuid, 'name' => $name, 'storage_key' => $key, 'checksum' => hash('sha256', $canonical), 'duration' => $duration, 'status' => 'pending', 'uploaded_by' => $actor->id]);
-                app(Foundation::class)->audit($actor, 'audio.uploaded', $audio, ['checksum' => $audio->checksum]);
+            $audio = DB::transaction(function () use ($actor, $name, $uuid, $key, $pcm, $file) {
+                $audio = AudioFile::create([
+                    'uuid' => $uuid, 'name' => $name, 'uploaded_by' => $actor->id,
+                    'original_name' => basename($file->getClientOriginalName()),
+                    'storage_key' => $pcm ? $key : null, 'source_key' => $pcm ? null : $key,
+                    'checksum' => $pcm ? hash('sha256', $pcm['bytes']) : null,
+                    'duration' => $pcm['duration'] ?? null, 'status' => $pcm ? 'pending' : 'processing',
+                ]);
+                app(Foundation::class)->audit($actor, 'audio.uploaded', $audio, ['checksum' => $audio->checksum, 'status' => $audio->status]);
 
                 return $audio;
             });
@@ -80,6 +63,15 @@ class AudioLibrary
             Storage::disk('local')->delete($key);
             throw $e;
         }
+        if (! $pcm) {
+            try {
+                ConvertAudio::dispatch($audio->id)->afterCommit();
+            } catch (\Throwable $e) {
+                app(AudioConversion::class)->fail($audio->id, 'Audio processing could not be queued. Please upload the recording again.');
+            }
+        }
+
+        return $audio->refresh();
     }
 
     public function approve(User $actor, AudioFile $audio): void

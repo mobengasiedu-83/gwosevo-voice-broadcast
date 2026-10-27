@@ -2,16 +2,19 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ConvertAudio;
 use App\Models\AudioFile;
 use App\Models\Campaign;
 use App\Models\Client;
 use App\Models\User;
+use App\Services\Broadcast\AudioConversion;
 use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\Readiness;
 use App\Services\Clients\Accounts;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -153,5 +156,27 @@ class ClientAudioModuleTest extends TestCase
         $this->member->assignRole('Super Administrator');
         $this->post('/broadcast/audio/'.$audio->id.'/approve')->assertForbidden();
         $this->assertSame('pending', $audio->fresh()->status);
+    }
+
+    public function test_background_conversion_preserves_account_ownership_and_review_boundaries(): void
+    {
+        Bus::fake([ConvertAudio::class]);
+        $pcm = str_repeat("\0", 1600);
+        $wav = 'RIFF'.pack('V', 36 + strlen($pcm)).'WAVEfmt '.pack('VvvVVvv', 16, 1, 1, 16000, 32000, 2, 16).'data'.pack('V', strlen($pcm)).$pcm;
+        $this->actingAs($this->owner);
+        $audio = app(AudioLibrary::class)->upload($this->owner, UploadedFile::fake()->createWithContent('source.wav', $wav), 'Client conversion');
+        $this->assertSame($this->client->id, $audio->client_id);
+        $this->assertSame('processing', $audio->status);
+        $this->get('/audio?status=processing')->assertOk()->assertSee('Client conversion')->assertDontSee('Approve audio');
+        $this->actingAs($this->foreign)->get('/audio')->assertDontSee('Client conversion');
+        // Worker completion must not inherit an unrelated authenticated account scope.
+        (new ConvertAudio($audio->id))->handle(app(AudioConversion::class));
+        $audio->refresh();
+        $this->assertSame('pending', $audio->status, $audio->processing_error ?? '');
+        $this->assertSame($this->client->id, $audio->client_id);
+        $this->get('/audio/'.$audio->id.'/preview')->assertNotFound();
+        $this->actingAs($this->member)->get('/audio/'.$audio->id.'/preview')->assertOk();
+        $this->post('/broadcast/audio/'.$audio->id.'/approve')->assertForbidden();
+        $this->assertNull($audio->approved_by);
     }
 }

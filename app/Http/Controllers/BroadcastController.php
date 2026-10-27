@@ -8,9 +8,9 @@ use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
+use App\Services\Billing\Rating;
 use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\Engine;
-use App\Services\Billing\Rating;
 use App\Services\Campaigns\Workspace;
 use App\Services\Foundation;
 use Carbon\CarbonImmutable;
@@ -37,7 +37,7 @@ class BroadcastController extends Controller
     {
         abort_unless($request->user()->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']), 403);
 
-        $filters = $request->validate(['status' => 'nullable|in:pending,approved,rejected', 'q' => 'nullable|string|max:100']);
+        $filters = $request->validate(['status' => 'nullable|in:processing,conversion_failed,pending,approved,rejected', 'q' => 'nullable|string|max:100']);
         $query = AudioFile::whereNotNull('uuid');
         $counts = (clone $query)->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status');
         $audio = $query->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
@@ -88,9 +88,13 @@ class BroadcastController extends Controller
     public function upload(Request $request, AudioLibrary $library)
     {
         $data = $request->validate(['name' => 'required|string|max:255', 'audio' => 'required|file|max:'.(int) ceil(config('voice_broadcast.max_audio_bytes') / 1024)]);
-        $library->upload($request->user(), $request->file('audio'), $data['name']);
+        $audio = $library->upload($request->user(), $request->file('audio'), $data['name']);
 
-        return back()->with('status', 'Audio validated and stored for review.');
+        return back()->with('status', match ($audio->status) {
+            'processing' => 'Audio uploaded. Conversion is processing; refresh the library to check its status.',
+            'conversion_failed' => $audio->processing_error,
+            default => 'Audio validated and stored for review.',
+        });
     }
 
     public function approveAudio(Request $request, AudioFile $audio, AudioLibrary $library)
@@ -126,7 +130,7 @@ class BroadcastController extends Controller
     public function downloadAudio(Request $request, AudioFile $audio)
     {
         abort_unless($request->user()->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']), 403);
-        abort_unless($audio->storage_key && Storage::disk('local')->exists($audio->storage_key), 404);
+        abort_unless(in_array($audio->status, ['pending', 'approved', 'rejected'], true) && $audio->storage_key && Storage::disk('local')->exists($audio->storage_key), 404);
 
         return Storage::disk('local')->download($audio->storage_key, $audio->uuid.'.wav', ['Cache-Control' => 'private, no-store']);
     }
@@ -134,7 +138,7 @@ class BroadcastController extends Controller
     public function previewAudio(Request $request, AudioFile $audio)
     {
         abort_unless($request->user()->hasAnyPermission(['audio.manage', 'audio.approve', 'telephony.view']), 403);
-        abort_unless($audio->storage_key && Storage::disk('local')->exists($audio->storage_key), 404);
+        abort_unless(in_array($audio->status, ['pending', 'approved', 'rejected'], true) && $audio->storage_key && Storage::disk('local')->exists($audio->storage_key), 404);
 
         return response()->file(Storage::disk('local')->path($audio->storage_key), [
             'Cache-Control' => 'private, no-store',

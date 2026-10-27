@@ -21,7 +21,7 @@ The existing `.env` AMI credentials are reused through `config/services.php`; cr
 
 ## Audio and dialplan installation
 
-Upload **8 kHz mono 16-bit PCM WAV**, at most 600 seconds / 10 MB, through the private voice library. Content, RIFF structure, sample format and duration are checked. The stored artifact is rebuilt from format and PCM data chunks, discarding metadata and unknown chunks. MP3 conversion and TTS are outside this one-way engine; convert a reviewed recording to the supported WAV format before uploading it. For example, with an administrator-installed FFmpeg: `ffmpeg -i input.mp3 -ac 1 -ar 8000 -c:a pcm_s16le output.wav`.
+Upload WAV, MP3, M4A, AAC, OGG, Opus, FLAC, AIFF, WMA or audio-only WebM, at most 600 seconds / 10 MB. Incompatible formats are converted automatically before review. The PBX artifact is always verified 8 kHz mono 16-bit PCM WAV, with metadata stripped and a SHA-256 checksum. See [automatic audio conversion](automatic-audio-conversion.md) for dependencies and background-worker setup.
 
 A different user with `audio.approve` must review and approve the recording. Download the canonical WAV from the private library, then transfer it securely to the PBX. Its UUID and SHA-256 are displayed in the library.
 

@@ -167,3 +167,11 @@ find storage bootstrap/cache -type d -exec chmod 750 {} \;
 find storage bootstrap/cache -type f -exec chmod 640 {} \;
 
 chmod 600 .env
+
+### Automatic audio conversion
+
+Audio uploads now support WAV, MP3, M4A, AAC, OGG/Opus, FLAC, AIFF, WMA and audio-only WebM. Incompatible recordings are converted to verified 8 kHz mono 16-bit PCM WAV before review. See [automatic audio conversion](automatic-audio-conversion.md) for setup, limits and failure handling.
+
+For a new deployment, install FFmpeg/FFprobe, set `FFMPEG_BINARY` and `FFPROBE_BINARY` to executable paths, run migrations, refresh the configuration and restart Horizon. Horizon now includes the `audio-conversion` queue. Check tools with `php artisan audio:conversion-check`.
+
+Locally, the tools are installed in `.tools/audio/`, the migration is applied, and a worker for `audio-conversion` is running. `composer dev` also listens to this queue on future starts. This feature has not been deployed to production.

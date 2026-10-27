@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ConvertAudio;
 use App\Models\AudioFile;
 use App\Models\CallAttempt;
 use App\Models\Campaign;
@@ -25,6 +26,7 @@ use App\Services\Foundation;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -386,10 +388,12 @@ class OneWayBroadcastTest extends TestCase
         $this->assertSame('approved', $ownAudio->fresh()->status);
     }
 
-    public function test_wrong_audio_format_is_rejected(): void
+    public function test_other_wav_sample_rates_are_queued_for_conversion(): void
     {
-        $this->expectException(ValidationException::class);
-        app(AudioLibrary::class)->upload($this->manager, UploadedFile::fake()->createWithContent('message.wav', $this->wav(16000)), 'Message');
+        Bus::fake([ConvertAudio::class]);
+        $audio = app(AudioLibrary::class)->upload($this->manager, UploadedFile::fake()->createWithContent('message.wav', $this->wav(16000)), 'Message');
+        $this->assertSame('processing', $audio->status);
+        Bus::assertDispatched(ConvertAudio::class);
     }
 
     public function test_legacy_approval_cannot_launch_without_full_snapshot(): void

@@ -6,6 +6,7 @@
         "build": "vite build",
         "dev": "vite",
         "test:ivr": "node tests/js/ivr-builder.test.cjs",
+        "test:audio-browser": "node tests/js/audio-browser.cjs",
         "test:browser": "node tests/js/ivr-browser.cjs"
     },
     "devDependencies": {
