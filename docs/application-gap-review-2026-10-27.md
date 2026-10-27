@@ -1,28 +1,30 @@
 # Application gap review — 27 October 2026
 
-Repository review of routes, controllers, services, models, commands, scheduled jobs, views, frontend assets and module documentation. This updates the 26 October review after the staff/roles, guide, visual IVR and UI work. Module numbering follows that review's eighteen-module roadmap. No production host, live provider account or PBX was inspected, and no calls or payments were initiated. Re-reviewed with a fresh isolated full test run: 274 tests and 2,218 assertions passed in 66.14 seconds using APP_URL=http://localhost. PHP syntax checks passed for 197 files; public JavaScript syntax and the IVR smoke test passed. Production services were not exercised.
+Repository review of routes, controllers, services, models, commands, scheduled jobs, views, frontend assets and module documentation. This updates the 26 October review after the staff/roles, guide, visual IVR and UI work. Module numbering follows that review's eighteen-module roadmap. No production host, live provider account or PBX was inspected, and no calls or payments were initiated. Latest full run: 277 tests, 2,230 assertions, no failures/errors, with one opt-in browser-fixture export test skipped (276 tests passed), in 114.32 seconds using APP_URL=http://localhost. The JavaScript smoke test, production build and whitespace checks passed. Prior PHP lint and Chrome results are historical checks identified below; production services were not exercised.
 
-## Fresh error and risk findings
+## Latest review findings
 
-| Severity / status | Finding | Evidence and impact |
+| Priority / status | Finding | Evidence and remaining action |
 | --- | --- | --- |
-| Medium — reproduced logic defect | IVR keypad field retains a custom validity error after rejecting invalid input | `public/js/ivr-builder.js` calls `setCustomValidity(...)`, restores the previous valid digit, and returns without clearing validity. A Node reproduction with the existing DOM mock confirmed that restored key `1` still carries the error. A real browser can block form submission until the field is corrected successfully or properties are recreated. Existing smoke tests omit this validation state. |
-| Build verification blocked — environment | `npm run build` fails: `vite: command not found` | Frontend dependencies are absent from this checkout. This does not establish a deployed-page runtime failure: portal assets are served from public files, but the Vite build cannot currently be verified. Install locked dependencies and rerun the build. |
-| High — billing policy gap, intentional current behavior | Wallet-less accounts pass billing admission | `Wallet::admission()` explicitly treats missing wallets as unpriced legacy operation. If all active clients must pay, onboarding and admission need a mandatory-wallet/tariff policy. This is an existing design choice, not a failed test. |
-| Medium — concurrency review required | Role deletion/assignment locking is inconsistent | Role deletion locks the role; staff assignment locks users but does not lock/revalidate the selected role in that transaction. Review the assign/delete race on MariaDB. No concurrent production failure was reproduced. |
-| Medium — browser/accessibility acceptance outstanding | New designer and portal styles lack real-browser verification in this session | The IVR test uses a lightweight DOM mock. Pointer capture, native constraint validation, touch dragging, overflow and keyboard/focus behavior still require browser tests. |
+| High — integration gap | Automatic precise timing ingestion remains absent | `billing:rate` consumes verified JSON files. No continuous CDR/CEL adapter or scheduled ingestion is wired into the repository. Confirm the production workflow before paid-volume operation; the repository cannot establish whether an external operator already supplies evidence. |
+| Medium — configuration consistency | Wallet exposure and PBX call timeout are separate settings | `billing.max_call_seconds` defaults to 900 seconds; both shipped Asterisk templates use `TIMEOUT(absolute)=620`. The IVR compiler copies that template. Default holds are conservative (15 billed minutes versus an approximately 11-minute template cap), but reducing the billing limit below the effective PBX limit can under-reserve. Align/enforce limits and validate the deployed dialplan. |
+| Implemented — configuration required | Hourly hold cleanup registered | `billing:wallet-expire --scheduled` now runs hourly with overlap protection, configurable actor/age/batch settings and structured failure/backlog logs. Automatic releases default to disabled until an internal billing actor and approved expiry policy are configured. Production scheduler supervision and external log alerts still need deployment verification. |
+| Pending live acceptance | MariaDB contention coverage remains incomplete | Assignment/create/edit/delete now share role-first locking and revalidation. A deterministic delete-after-validation test exists. The new standalone two-connection test passed assignment-first, deletion-first and rollback against local MySQL 8.4.6 using a disposable scratch database. MariaDB acceptance still requires running tests/integration/role-locking.php against MariaDB; the configured local server is MySQL. |
+| Pending broader accessibility acceptance | Browser coverage is scoped to the designer | Previous real Chrome checks passed for admin/client desktop/mobile fixtures. They cover pointer/touch, keyboard card movement, native validation and overflow. Safari/Firefox, physical devices, screen readers, all screens and full WCAG review remain unverified. |
 
-No application fixes were made during this review. These findings are distinct from unimplemented features below. Passing tests do not establish absence of bugs or external-service readiness.
+### Previously reported issues now addressed
 
-## Verification performed
+- IVR keypad validity is cleared when restoring a rejected digit, with regression coverage.
+- Client-owned launch/reservation fails closed without a wallet. Matching tariff and credit checks remain; internal non-client campaigns are exempt.
+- Staff assignment and role mutation share role-first transactional locking and revalidation.
+- Frontend dependencies and a lockfile exist; the production build now passes.
+- Real-browser IVR checks and keyboard movement exist. Do not describe this as full application accessibility certification.
 
-- Full isolated PHPUnit suite: **274 tests, 2,218 assertions, all passed**.
-- PHP lint: **197 files, no syntax errors** across app/routes/config/database.
-- Public JavaScript syntax checks and `tests/js/ivr-builder.test.cjs`: passed.
-- Additional in-memory IVR invalid-key reproduction: confirmed persistent custom validity.
-- `git diff --check`: passed.
-- `npm run build`: blocked by missing Vite executable.
-- No live calls, financial transactions, production service checks or provider acceptance tests were run.
+This review does not change application behavior. Passing isolated tests do not establish live PBX, provider, deployment or load-test readiness.
+
+## Latest verification
+
+Full isolated PHPUnit run: **277 tests, 2,230 assertions, zero failures/errors, one skipped opt-in fixture-export test (276 passed), 114.32 seconds**. The skip is expected unless IVR_BROWSER_FIXTURE is set. The current review reran the IVR JavaScript smoke test, production frontend build and whitespace checks successfully. Browser acceptance results refer to the preceding browser-verification work, not a new live production test. No calls, payments or production data were changed.
 
 ## Module status
 
@@ -40,7 +42,7 @@ No application fixes were made during this review. These findings are distinct f
 | 10 Client audio and internal approval | Implemented core | Private upload/preview/download, rejection and resubmission, internal-only approval exist. Audio waveform/loudness analysis remains an enhancement. |
 | 11 Campaigns, schedules and IVR | Implemented core | Frozen audiences, approval/version controls, scheduling, templates, pause/resume/cancel, media/DND/capacity and wallet admission exist. Advanced recurrence, campaign cost previews and IVR simulation remain. Bounded retry/backoff already exists. The visual IVR editor now exists. |
 | 12 Call reconciliation and minute rating | Partial commercial integration | Exact duration arithmetic, tariff snapshots, exceptions and trusted-evidence file import exist. No automatic production high-precision CDR/CEL ingestion pipeline was found; validate and integrate a source or formally accept a manual operating workflow. |
-| 13 Wallet, reservations and ledger | Implemented / commercial acceptance | Atomic reservations, settlement/release, immutable ledger, adjustments and reconciliation exist. Accounts without wallets are deliberately allowed unpriced operation. Decide whether paid accounts must fail closed without a wallet/tariff. Validate concurrent database behavior and maximum-call exposure. |
+| 13 Wallet, reservations and ledger | Implemented / commercial acceptance | Atomic reservations, settlement/release, immutable ledger, adjustments and reconciliation exist. Client-owned campaigns now require wallets at launch/reservation. Internal non-client campaigns remain outside client wallet billing. Validate concurrent database behavior and maximum-call exposure. |
 | 14 Payment gateway and top-ups | Partial external integration | Initiation, authenticated callbacks, idempotent credit, receipts, refunds and reconciliation exist against a configurable HTTP contract. Xcel-specific API/signature/verification/refund compatibility and settlement evidence remain unverified. |
 | 15 Admin finance and reporting | Implemented core | Rate assignments, wallet administration, dispute credits, reconciliation and CSV statements/reports exist. Tax/invoice policy, separate carrier-cost/margin accounting and Finance acceptance remain. |
 | 16 Notifications and enhanced reporting | Implemented core / enhancements pending | Personal inboxes, bell, queued email/SMS, delivery records and campaign CSV exist. Per-event/channel user preferences, retention, central delivery-failure monitoring and XLSX report output remain. |
@@ -89,12 +91,12 @@ These are not proof of missing application code:
 3. Actual email/SMS delivery and Turnstile configuration acceptance.
 4. MariaDB concurrency/load testing, Redis/Horizon/gateway/scheduler supervision, monitoring and alerts.
 5. HTTPS and production security review, backup/restore drill, rollback verification, accessibility/browser UAT and paid-pilot sign-off.
-6. Decide whether every paid client must have a wallet and tariff. `Wallet::admission()` intentionally permits accounts without wallets to retain legacy unpriced operation.
+6. Client wallets are now mandatory for client-owned call admission. Finance must configure the wallet, assign a matching tariff and provide enough credit for the call hold. Internal campaigns without a client remain exempt.
 7. Decide commercial tax/invoice, retention, consent/KYC and silent-playback policies where not already approved.
 
 ## Suggested order
 
-Prioritize dependable timing ingestion and PBX acceptance, provider integration, mandatory paid-account billing policy, production recovery/security and a reconciled pilot. Then add IVR simulation/test-call tooling, campaign estimates, notification operations and reporting. API integrations, advanced scheduling, CRM features and accounting extensions can follow agreed business priorities.
+Prioritize dependable timing ingestion and PBX acceptance, provider integration, call-limit consistency, reviewed hold cleanup, production recovery/security and a reconciled pilot. Then add IVR simulation/test-call tooling, campaign estimates, notification operations and reporting. API integrations, advanced scheduling, CRM features and accounting extensions can follow agreed business priorities.
 
 ## Evidence anchors
 

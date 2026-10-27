@@ -60,3 +60,24 @@ php artisan billing:wallet-expire --hours=24 --actor=ADMIN_ID
 Tests cover exact minor-unit funding, idempotent replay, cross-wallet key rejection, over-debit refusal, reversal permitted once and only for funding/adjustment, permission and tenancy denial, admission refusal without wallet/tariff/match/credit, tariff-matched wallet opening, launch blocking while unfunded, held-credit arithmetic, reserve fail-closed and duplicate holds, settle-once with replay, unanswered release, shortfall exception and audit, stale-hold expiry with actor audit and idempotent ledger append, read-only client wallet balance/history with filters and tenant isolation, admin coverage and backlog summaries, billing-permission gating on the client finance tab, ledger-chain and settlement-lifecycle tamper detection, denomination immutability after history, and one-call affordability. The Module 12 rating, campaign, gateway and audio suites remain regression coverage.
 
 Local schema installation and permission seeding are separate from production deployment. No production currency, tariff, funding, approval reference or `BILLING_MAX_CALL_SECONDS` value was configured here; confirm the maximum billable call duration with Finance before enabling wallet-backed campaigns. Prepaid invoicing/receipting, payment-gateway top-ups and Finance's shortfall recovery process remain external release gates.
+
+## Mandatory client billing update — 27 October 2026
+
+All client-owned campaigns now require a wallet before launch and before each call reservation, including previously approved campaigns. Missing wallets decline with wallet_missing. The assigned tariff must match the wallet denomination, be priceable, and have enough available credit for the configured maximum call hold. Reviewed zero-rate tariffs retain their existing behavior. Internal campaigns with no client_id remain outside client wallet billing.
+
+Before enabling calls for a client, Finance must open its wallet, assign the approved matching tariff, and load sufficient credit. No balance or tariff is fabricated automatically. This does not retroactively charge historical calls.
+
+## Scheduled hold cleanup
+
+The application registers `billing:wallet-expire --scheduled` hourly with overlap protection. Configure the following production environment settings after approving the age threshold against normal CDR/CEL delays:
+
+```
+BILLING_HOLD_CLEANUP_ENABLED=true
+BILLING_HOLD_CLEANUP_ACTOR_ID=<internal billing.manage user ID>
+BILLING_HOLD_CLEANUP_HOURS=24
+BILLING_HOLD_CLEANUP_LIMIT=500
+```
+
+The default is disabled, with no actor selected. Missing/unauthorized actors fail closed. Age is bounded to 1–720 hours and batches to 1–1000 holds. Manual invocation retains its existing actor/hours/limit options. Rebuild config after deployment, ensure the existing scheduler timer/cron runs, and check `php artisan schedule:list`. Do not add another scheduling mechanism if one is already running.
+
+Monitor structured application logs: `billing.hold_cleanup_invalid_actor`, `billing.hold_cleanup_failed`, `billing.hold_cleanup_disabled`, `billing.hold_cleanup_backlog`, and `billing.hold_cleanup_completed`. Completion includes released/remaining counts. Connect failure/backlog events to the production log alerting system; these logs alone do not send email/SMS alerts. Investigate recurring backlogs or stale rated holds rather than blindly increasing expiry throughput. Review release audit entries and reconcile late timing evidence; expiration does not forgive later charges.

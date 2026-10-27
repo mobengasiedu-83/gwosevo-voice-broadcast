@@ -86,6 +86,21 @@ class WalletModuleTest extends TestCase
         return [$attempt, ['attempt_uuid' => $uuid, 'uniqueid' => $uuid, 'linkedid' => $attempt->linkedid, 'disposition' => $answered ? 'ANSWERED' : 'BUSY', 'answered_at' => $answered ? $answer->format('Y-m-d\TH:i:s.u\Z') : null, 'ended_at' => $end->format('Y-m-d\TH:i:s.u\Z'), 'duration_ms' => $answered ? $ms : 0]];
     }
 
+    public function test_client_reservation_requires_a_wallet_even_for_existing_attempts(): void
+    {
+        [$attempt] = $this->attempt();
+        $credit = app(Wallet::class)->admission($this->client->id, $attempt->tariff_snapshot);
+        $this->assertFalse($credit['allowed']);
+        $this->assertSame('wallet_missing', $credit['reason']);
+        try {
+            app(Wallet::class)->reserve($attempt);
+            $this->fail('Client attempt was admitted without a wallet.');
+        } catch (WalletDeclined $exception) {
+            $this->assertSame('wallet_missing', $exception->reason);
+        }
+        $this->assertSame(0, WalletReservation::count());
+    }
+
     public function test_funding_and_adjustments_are_exact_idempotent_and_corrected_by_reversal(): void
     {
         $wallets = app(Wallet::class);
@@ -220,8 +235,12 @@ class WalletModuleTest extends TestCase
             $this->assertSame('insufficient_credit', $declined->reason);
         }
 
-        // Accounts without a wallet are not wallet-billed yet.
-        $this->assertFalse($wallets->admission($this->client->id + 999, $snapshot)['applicable']);
+        // Client billing fails closed even before Finance opens the wallet.
+        $missing = $wallets->admission($this->client->id + 999, $snapshot);
+        $this->assertTrue($missing['applicable']);
+        $this->assertFalse($missing['allowed']);
+        $this->assertSame('wallet_missing', $missing['reason']);
+        $this->assertTrue($wallets->admission(null, null)['allowed']);
     }
 
     public function test_campaign_launch_is_blocked_while_the_wallet_is_unfunded(): void

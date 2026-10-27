@@ -63,6 +63,12 @@ class ClientCampaignModuleTest extends TestCase
         foreach ([$this->client, $other] as $client) {
             $accounts->status($this->admin, $client, 'active', 'Ready');
         }
+        $tariffs = app(Tariffs::class);
+        $tariff = $tariffs->create($this->admin, ['code' => 'prepaid-fixture', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2, 'rate_minor_per_minute' => 30, 'playback_policy' => 'charge_answered'], 'Test prepaid rate');
+        $tariffs->assign($this->admin, $this->client, $tariff, 'Test prepaid setup');
+        $wallets = app(\App\Services\Billing\Wallet::class);
+        $wallet = $wallets->open($this->admin, $this->client, 'GHS', 2, 'Test prepaid wallet');
+        $wallets->post($this->admin, $wallet, 'funding', '100.00', 'Test prepaid funding', 'TEST-PREPAID', 'client-campaign-prepaid');
         $this->owner = User::factory()->create();
         $this->member = User::factory()->create();
         $this->foreign = User::factory()->create();

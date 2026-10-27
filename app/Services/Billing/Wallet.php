@@ -35,8 +35,8 @@ use RuntimeException;
  * - Corrections are reversing entries with a reason, actor, timestamp and
  *   approval reference; historical entries are never rewritten.
  *
- * Enforcement applies to accounts that have a wallet. Accounts without a wallet
- * keep the pre-wallet manual/unpriced behaviour until Finance opens one.
+ * Client accounts must have a wallet before calls can be admitted.
+ * Internal campaigns without a client remain outside client wallet billing.
  */
 class Wallet
 {
@@ -107,9 +107,8 @@ class Wallet
     /**
      * Evaluate whether a client campaign may admit another attempt.
      *
-     * Accounts without a wallet are "not applicable": they are not charged by the
-     * wallet and keep the existing manual billing process. A wallet-backed account
-     * must have a priceable, matching tariff and enough available credit.
+     * Client accounts require a wallet, a matching tariff and sufficient credit.
+     * Internal campaigns without a client remain outside client wallet billing.
      */
     public function admission(?int $clientId, ?array $tariff): array
     {
@@ -119,7 +118,7 @@ class Wallet
         }
         $wallet = WalletAccount::where('client_id', $clientId)->first();
         if (! $wallet) {
-            return array_merge($base, ['reason' => 'wallet_missing']);
+            return array_merge($base, ['applicable' => true, 'allowed' => false, 'reason' => 'wallet_missing']);
         }
         $base = ['applicable' => true, 'allowed' => false, 'reason' => null, 'exposure_minor' => 0, 'available_minor' => $wallet->available_minor, 'wallet' => $wallet];
         if (! $tariff) {
@@ -139,7 +138,7 @@ class Wallet
         return array_merge($base, ['allowed' => true, 'exposure_minor' => $exposure]);
     }
 
-    /** Hold the maximum exposure for one attempt. Null when the account is not wallet-backed. */
+    /** Hold client credit for one attempt. Only internal attempts without a client are exempt. */
     public function reserve(CallAttempt $attempt): ?WalletReservation
     {
         try {
@@ -150,7 +149,7 @@ class Wallet
             }
             $wallet = WalletAccount::where('client_id', $clientId)->lockForUpdate()->first();
             if (! $wallet) {
-                return null;
+                throw new WalletDeclined('wallet_missing');
             }
             $existing = WalletReservation::where('call_attempt_id', $attempt->id)->first();
             if ($existing) {

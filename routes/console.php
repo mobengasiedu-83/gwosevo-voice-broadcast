@@ -21,3 +21,6 @@ Artisan::command('identity:prune', function () {
     $this->info('Pruned '.$count.' expired identity challenges.');
 })->purpose('Remove expired identity challenges after the configured retention period');
 Schedule::command('identity:prune')->daily()->withoutOverlapping();
+
+Schedule::command('billing:wallet-expire --scheduled')->hourly()->withoutOverlapping()
+    ->onFailure(fn () => \Illuminate\Support\Facades\Log::error('billing.hold_cleanup_failed'));

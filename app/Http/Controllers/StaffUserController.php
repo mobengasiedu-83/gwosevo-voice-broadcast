@@ -42,6 +42,18 @@ class StaffUserController extends Controller
         return $data['role'];
     }
 
+    private function lockedRole(string $name): Role
+    {
+        // Role mutation paths acquire this lock before acquiring user locks.
+        // Recheck after validation: deletion or renaming may have won the race.
+        $role = Role::where('guard_name', 'web')->where('name', $name)->lockForUpdate()->first();
+        if (! $role || $role->name === 'Client Member') {
+            throw ValidationException::withMessages(['role' => 'This role is no longer available. Refresh and select another role.']);
+        }
+
+        return $role;
+    }
+
     public function store(Request $request, Foundation $foundation)
     {
         $this->authorizeStaff($request);
@@ -52,8 +64,9 @@ class StaffUserController extends Controller
             'password' => ['required', 'confirmed', 'max:128', Password::min(12)->mixedCase()->numbers()->symbols()],
         ]);
         DB::transaction(function () use ($request, $foundation, $role, $data) {
+            $lockedRole = $this->lockedRole($role);
             $user = User::create($data);
-            $user->assignRole($role);
+            $user->assignRole($lockedRole);
             $foundation->audit($request->user(), 'staff.created', $user, ['role' => $role]);
         });
 
@@ -66,6 +79,7 @@ class StaffUserController extends Controller
         abort_if($user->clientMembership()->exists(), 404);
         $role = $this->role($request);
         DB::transaction(function () use ($request, $user, $role, $foundation) {
+            $lockedRole = $this->lockedRole($role);
             // Serialize staff role changes so the final super administrator cannot be removed.
             $staff = User::whereDoesntHave('clientMembership')->orderBy('id')->lockForUpdate()->get();
             $target = $staff->firstWhere('id', $user->id);
@@ -76,7 +90,7 @@ class StaffUserController extends Controller
                 && $staff->filter(fn ($member) => $member->isSuperAdministrator())->count() <= 1) {
                 throw ValidationException::withMessages(['role' => 'Keep at least one Super Administrator. Create another before changing this role.']);
             }
-            $target->syncRoles([$role]);
+            $target->syncRoles([$lockedRole]);
             // Revoke stale sessions after an access change. The current user will sign in again too.
             $target->forceFill(['auth_version' => $target->auth_version + 1, 'remember_token' => Str::random(60)])->save();
             $foundation->audit($request->user(), 'staff.role_changed', $target, ['previous_roles' => $previous, 'role' => $role]);

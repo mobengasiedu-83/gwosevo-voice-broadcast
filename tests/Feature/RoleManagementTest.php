@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -35,6 +36,29 @@ class RoleManagementTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
         $this->assertFalse($analyst->fresh()->hasPermissionTo('reports.view'));
         $this->assertDatabaseHas('audit_logs', ['action' => 'staff.role_permissions_changed', 'actor_id' => $admin->id]);
+    }
+
+    public function test_role_deleted_after_validation_does_not_create_an_unassigned_staff_account(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $admin = User::factory()->create();
+        $admin->assignRole('Super Administrator');
+        $role = Role::create(['name' => 'Temporary staff role', 'guard_name' => 'web']);
+        $armed = true;
+        // Deterministically model deletion immediately after the exists validator reads the role.
+        DB::listen(function ($query) use (&$armed, $role) {
+            if ($armed && str_contains($query->sql, 'count(*)') && str_contains($query->sql, 'roles')
+                && in_array($role->name, $query->bindings, true)) {
+                $armed = false;
+                DB::table('roles')->where('id', $role->id)->delete();
+            }
+        });
+        $this->actingAs($admin)->postJson(route('staff.store'), [
+            'name' => 'Concurrent staff', 'email' => 'concurrent@example.com', 'role' => $role->name,
+            'password' => 'StrongPassword123!', 'password_confirmation' => 'StrongPassword123!',
+        ])->assertUnprocessable()->assertJsonValidationErrors('role');
+        $this->assertFalse($armed, 'The simulated deletion must occur after validation.');
+        $this->assertDatabaseMissing('users', ['email' => 'concurrent@example.com']);
     }
 
     public function test_only_super_admin_can_manage_roles_and_protected_roles_cannot_change(): void

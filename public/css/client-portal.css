@@ -108,3 +108,5 @@ html[data-portal-design] .client-portal #sidebar .nav-item.active{background:lin
 @media(max-width:1100px){.client-setup-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:550px){.client-setup-grid{grid-template-columns:1fr}.client-setup-card strong{font-size:14px}}
 @media(prefers-reduced-motion:reduce){.client-portal main .client-setup-card{transition:none}.client-portal main .client-setup-card:hover{transform:none}}
+
+.client-portal.workspace-page main .client-page-banner a:not(.button){color:#c4f7e9}
