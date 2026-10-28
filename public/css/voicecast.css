@@ -606,3 +606,249 @@ html[data-portal-design] #sidebar .admin-nav-group .subnav .nav-item:hover {
         grid-template-columns: 1fr;
     }
 }
+
+/* Personal alert inbox: severity cards, delivery chips and event opt-ins. */
+.alert-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.alert-toolbar .module-tabs {
+    margin: 0;
+}
+.workspace-page main .alert-toolbar form {
+    margin: 0;
+    gap: 10px;
+    align-items: center;
+}
+.alert-list {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.alert-card {
+    display: block;
+    min-width: 0;
+    padding: 15px 17px;
+    border: 1px solid var(--border);
+    border-left: 3px solid color-mix(in srgb, var(--blue) 45%, var(--border));
+    border-radius: 12px;
+    background: var(--panel);
+    overflow-wrap: anywhere;
+}
+.alert-card.is-unread {
+    border-color: color-mix(in srgb, var(--blue) 26%, var(--border));
+    background: color-mix(in srgb, var(--blue) 6%, var(--panel));
+}
+.alert-card.is-success {
+    border-left-color: color-mix(in srgb, var(--green) 70%, var(--border));
+}
+.alert-card.is-warning {
+    border-left-color: color-mix(in srgb, var(--amber) 75%, var(--border));
+    background: color-mix(in srgb, var(--amber) 7%, var(--panel));
+}
+.alert-card.is-error {
+    border-left-color: #dc6684;
+    background: color-mix(in srgb, #dc6684 7%, var(--panel));
+}
+.alert-card.is-compact {
+    padding: 12px 15px;
+}
+.alert-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+.alert-card .alert-card-head h3 {
+    flex: 1 1 240px;
+    min-width: 0;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+}
+.alert-state {
+    flex: none;
+    padding: 2px 9px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+}
+.alert-card.is-unread .alert-state {
+    border-color: color-mix(in srgb, var(--blue) 45%, var(--border));
+    background: color-mix(in srgb, var(--blue) 14%, transparent);
+    color: color-mix(in srgb, var(--blue) 88%, var(--ink));
+}
+.alert-tag {
+    flex: none;
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .7px;
+    text-transform: uppercase;
+}
+.alert-card .alert-meta {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.6;
+}
+.alert-card .alert-body {
+    margin: 10px 0 0;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.8;
+}
+.alert-channels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+}
+td .alert-channels {
+    margin: 0;
+}
+.alert-channel {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.6;
+}
+.alert-channel.is-queued {
+    border-color: color-mix(in srgb, var(--blue) 40%, var(--border));
+    background: color-mix(in srgb, var(--blue) 8%, var(--panel));
+    color: color-mix(in srgb, var(--blue) 85%, var(--ink));
+}
+.alert-channel.is-sent {
+    border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+    background: color-mix(in srgb, var(--green) 9%, var(--panel));
+    color: color-mix(in srgb, var(--green) 85%, var(--ink));
+}
+.alert-channel.is-failed {
+    border-color: color-mix(in srgb, #dc6684 50%, var(--border));
+    background: color-mix(in srgb, #dc6684 9%, var(--panel));
+    color: color-mix(in srgb, #dc6684 88%, var(--ink));
+}
+.alert-channel.is-skipped {
+    border-color: color-mix(in srgb, var(--amber) 45%, var(--border));
+    background: color-mix(in srgb, var(--amber) 8%, var(--panel));
+    color: color-mix(in srgb, var(--amber) 85%, var(--ink));
+}
+.alert-empty {
+    padding: 20px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+}
+.workspace-page main .alert-settings-form {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+}
+.alert-settings {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+}
+.workspace-page main .alert-settings label {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 2px 0;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+}
+.workspace-page main .alert-settings label > input {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    min-height: 18px;
+    margin: 0;
+}
+.alert-settings-form .alert-settings-hint {
+    width: 100%;
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.7;
+}
+@media (max-width: 650px) {
+    .alert-toolbar {
+        align-items: stretch;
+    }
+    .workspace-page main .alert-toolbar form,
+    .workspace-page main .alert-toolbar form > button {
+        width: 100%;
+    }
+    .alert-card {
+        padding: 14px;
+    }
+}
+
+/* Account profile: two-column detail grid with full-width free text. */
+.contact-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex: none;
+}
+@media (max-width: 550px) {
+    .contact-heading-actions {
+        width: 100%;
+    }
+    .contact-heading-actions .button {
+        flex: 1 1 100%;
+        text-align: center;
+    }
+}
+
+.workspace-page main .field-grid .form-field-wide,
+.workspace-page main .field-grid label:has(textarea) {
+    grid-column: 1 / -1;
+}
+.workspace-page main .field-grid textarea {
+    min-height: 96px;
+}
+.workspace-page main .field-grid label > textarea {
+    width: 100%;
+}
+.workspace-page main .preference-row {
+    align-items: center;
+    gap: 14px;
+    margin: 14px 0 0;
+}
+.workspace-page main .preference-row > label {
+    flex: 1 1 260px;
+    order: 1;
+}
+.workspace-page main .preference-row > button {
+    order: 2;
+}
+@media (max-width: 650px) {
+    .workspace-page main .preference-row > button {
+        width: 100%;
+    }
+}
+
+

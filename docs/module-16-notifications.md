@@ -23,7 +23,7 @@ Audio review alerts (`audio.submitted`) are raised the moment a client recording
 
 Campaign-completion copies are the first event covered by client-controlled subscriptions. Both channels start switched off, so a newly onboarded client receives the in-app alert only until they choose otherwise.
 
-- The toggles live on the client **Account → Notifications** page (`/account/notifications`, `POST /account/notifications/preferences`). The account profile page links to them from its notification-display section.
+- The toggles live on the client **Account → Notifications** page (`/account/notifications`, `POST /account/notifications/preferences`), in a final **Event notifications** section below the alert inbox and account notices. The account profile page links to them from its notification-display section.
 - Choices are stored as booleans in `users.portal_preferences` (`campaign_completed_email`, `campaign_completed_sms`) on the member's own login, so each owner opts in separately and one member's choice never changes a colleague's or the staff copy. A missing key, `null` or a non-`true` value means disabled.
 - `Notifier::campaignCompleted()` resolves each recipient's `channels` before creating the alert. Disabled channels create no `notification_deliveries` rows at all, rather than `skipped` rows. The personal in-app alert is still recorded so the event remains in the account inbox and bell.
 - The endpoint is client-only: staff logins have no membership and receive `403`. Unknown keys (for example a forged `campaign_completed_push` or `notification_badge`) are ignored and cannot rewrite unrelated preferences; non-boolean values fail validation and return to the page with an error.
@@ -56,6 +56,7 @@ Email uses the application mailer. SMS uses the existing TxtConnect identity del
 ## Inbox and reading
 
 - Staff use `/notifications`; client users use `/account/notifications`. Both pages show personal account alerts, delivery status, category filtering (`review`, `campaign`, `billing`, `payment`) and delivery-only records.
+- Both inboxes share the same presentation: each alert is a card carrying its title, timestamp, category and unread/read state, body, and one chip per email/SMS delivery with its status (queued, sent, failed or skipped). The markup lives in the shared partials `notifications.partials.alerts` and `notifications.partials.deliveries`, so the staff and client shells cannot drift, and the category filters use the shared `module-tabs` control. Delivery-only records render as a table, so a review decision whose in-app copy already exists in client notices is not repeated as a card.
 - The staff layout bell shows the unread count and the eight newest personal alerts. The client layout combines unread personal alerts with unread audit-backed notices.
 - Marking read is monotonic by visible notification ID (`through_id`). It updates only the authenticated user's in-app alerts at or below that ID; posting another user's ID returns 404. Marking through the newest visible alert is the mark-all behaviour.
 - Response caching is disabled for both inboxes so one login's alerts cannot be served to another.
