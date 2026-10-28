@@ -9,6 +9,7 @@ The supplied HTML prototype is the visual reference for the existing authenticat
 - Updated typography, table spacing, filters and responsive layouts across the shared dashboard and operational screens.
 - Light theme by default for the portal, while preserving saved theme preferences and the theme toggle.
 - Existing navigation, server-side permissions, metrics, forms and operational controls remain connected to the existing application.
+- Filter bars pair a primary submit (`Apply filters` / `Search`) with a `Reset` link rendered as the shared secondary button (`class="button secondary"`), so it matches the `Refresh` control used on dashboard pages.
 
 ## Review findings
 

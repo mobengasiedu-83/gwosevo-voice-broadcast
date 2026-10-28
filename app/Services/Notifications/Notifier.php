@@ -4,6 +4,7 @@ namespace App\Services\Notifications;
 
 use App\Models\AudioFile;
 use App\Models\Campaign;
+use App\Models\Client;
 use App\Models\PaymentIntent;
 use App\Models\User;
 use App\Models\WalletAccount;
@@ -15,7 +16,7 @@ use Throwable;
 /** Raises the Module 16 alerts at each authoritative business transition. */
 class Notifier
 {
-    public function __construct(private Center $center) {}
+    public function __construct(private Center $center, private Preferences $preferences) {}
 
     public function audioReviewed(AudioFile $audio, string $decision, ?string $reason, ?User $actor): void
     {
@@ -40,6 +41,34 @@ class Notifier
             // Audio decisions already appear in the audit-backed client inbox.
             'in_app' => false,
         ]), 'audio_review', $audio->client_id);
+    }
+
+    /**
+     * Alert staff reviewers the moment a client recording reaches the review
+     * queue, so audio approval never waits for someone to open the library.
+     */
+    public function audioSubmitted(AudioFile $audio, ?User $actor = null): void
+    {
+        $recipients = collect($this->center->audioApprovers())
+            ->reject(fn (User $user) => $actor && $user->id === $actor->id)
+            ->values();
+        if ($recipients->isEmpty()) {
+            return;
+        }
+        $client = Client::whereKey($audio->client_id)->value('name');
+        $name = $this->name($audio->name ?? $audio->original_name ?? 'Untitled recording');
+        $this->safe(fn () => $this->center->notifyUsers($recipients, [
+            'client_id' => $audio->client_id,
+            'category' => 'review',
+            'event_key' => 'audio.submitted',
+            'severity' => 'warning',
+            'title' => 'Recording awaiting approval',
+            'body' => '“'.$name.'” from '.$this->name($client ?: 'a client').' is waiting for review. Preview the recording and approve it so the campaign can launch.',
+            'url' => route('audio.index', ['status' => 'pending']),
+            'data' => ['audio_id' => $audio->id, 'client_id' => $audio->client_id, 'uploaded_by' => $audio->uploaded_by],
+            // Reviewers are emailed; SMS would add cost without speeding the review.
+            'channels' => ['email'],
+        ]), 'audio_submitted', $audio->client_id);
     }
 
     public function campaignReviewed(Campaign $campaign, string $decision, string $reason, User $actor): void
@@ -70,19 +99,25 @@ class Notifier
         if (! $campaign) {
             return;
         }
-        $this->safe(fn () => $this->center->notifyUsers(
-            $this->center->campaignAudience((int) $campaign->client_id, $campaign->owner_id),
-            [
-                'client_id' => $campaign->client_id,
-                'category' => 'campaign',
-                'event_key' => 'campaign.completed',
-                'severity' => 'info',
-                'title' => 'Campaign completed',
-                'body' => '“'.$this->name($campaign->name).'” has finished all eligible recipients. Open reports to review its outcomes.',
-                'url' => route('campaigns.show', $campaign->id),
-                'data' => ['campaign_id' => $campaign->id],
-            ]
-        ), 'campaign_complete', $campaign->client_id);
+        // Email and SMS copies are per-login opt-ins that start switched off, so
+        // each owner's own channels are resolved before the alert is created.
+        $this->safe(function () use ($campaign) {
+            foreach ($this->center->campaignAudience((int) $campaign->client_id, $campaign->owner_id) as $member) {
+                $this->center->notifyUsers([$member], [
+                    'client_id' => $campaign->client_id,
+                    'category' => 'campaign',
+                    'event_key' => 'campaign.completed',
+                    'severity' => 'info',
+                    'title' => 'Campaign completed',
+                    'body' => '“'.$this->name($campaign->name).'” has finished all eligible recipients. Open reports to review its outcomes.',
+                    'url' => route('campaigns.show', $campaign->id),
+                    'data' => ['campaign_id' => $campaign->id],
+                    // The in-app inbox record is always kept; only the optional
+                    // email and SMS copies depend on the client's preferences.
+                    'channels' => $this->preferences->channels($member, 'campaign_completed'),
+                ]);
+            }
+        }, 'campaign_complete', $campaign->client_id);
     }
 
     /**

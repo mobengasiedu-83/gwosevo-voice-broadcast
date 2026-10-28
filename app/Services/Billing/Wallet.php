@@ -5,12 +5,16 @@ namespace App\Services\Billing;
 use App\Models\AuditLog;
 use App\Models\CallAttempt;
 use App\Models\CallRating;
+use App\Models\Campaign;
+use App\Models\CampaignRecipient;
+use App\Models\CampaignVersion;
 use App\Models\Client;
 use App\Models\PaymentIntent;
 use App\Models\User;
 use App\Models\WalletAccount;
 use App\Models\WalletLedgerEntry;
 use App\Models\WalletReservation;
+use App\Services\Broadcast\Readiness;
 use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
 use App\Services\Notifications\Notifier;
@@ -41,7 +45,7 @@ use RuntimeException;
 class Wallet
 {
     /** Reasons an admission check can refuse to hold credit. */
-    public const REASONS = ['wallet_missing', 'tariff_missing', 'tariff_not_priced', 'currency_mismatch', 'insufficient_credit'];
+    public const REASONS = ['wallet_missing', 'tariff_missing', 'tariff_not_priced', 'currency_mismatch', 'insufficient_credit', 'duration_missing'];
 
     public const TYPES = ['funding', 'adjustment', 'reversal', 'reservation', 'release', 'settlement'];
 
@@ -66,6 +70,7 @@ class Wallet
             'tariff_not_priced' => 'The assigned call tariff cannot be priced. Assign a reviewed tariff version.',
             'currency_mismatch' => 'The wallet currency and minor-unit scale must match the assigned tariff.',
             'insufficient_credit' => 'Insufficient calling credit for one reserved call. Ask Finance to top up the wallet before launching.',
+            'duration_missing' => 'The approved recording has no measured duration. Re-process it in the Audio Library before launching.',
             default => 'A calling wallet is not configured for this account.',
         };
     }
@@ -75,6 +80,7 @@ class Wallet
     {
         return match ($reason) {
             'insufficient_credit' => 'Available credit is below the maximum cost of one full call. New calls will not start until Finance tops up the wallet.',
+            'duration_missing' => 'The selected recording has no measured length yet. Re-process it so its credit cost can be calculated.',
             'tariff_missing' => 'A call tariff is not assigned yet. Finance must configure billing before calls can be admitted.',
             'tariff_not_priced' => 'The assigned call tariff cannot be priced. Finance must assign a reviewed tariff version.',
             'currency_mismatch' => 'The wallet currency does not match the assigned call tariff. Finance must correct the billing configuration.',
@@ -82,9 +88,20 @@ class Wallet
         };
     }
 
-    /** Reserved minutes for one attempt: the configured maximum, rounded up. */
-    public function exposureMinutes(): int
+    /**
+     * Reserved minutes for one attempt, rounded up like `ceil_minute_v1`
+     * settlement: the measured recording length when supplied, otherwise the
+     * configured maximum call duration.
+     */
+    public function exposureMinutes(?int $durationMs = null): int
     {
+        if ($durationMs !== null) {
+            if ($durationMs < 1 || $durationMs > 86400000) {
+                throw new LogicException('Invalid recording duration for credit reservation.');
+            }
+
+            return max(1, intdiv($durationMs + 59999, 60000));
+        }
         $seconds = (int) config('billing.max_call_seconds');
         if ($seconds < 60 || $seconds > 86400) {
             throw new LogicException('BILLING_MAX_CALL_SECONDS must be between 60 and 86400.');
@@ -94,23 +111,27 @@ class Wallet
     }
 
     /** Maximum charge exposure for a frozen tariff snapshot, in minor units. */
-    public function exposureMinor(?array $tariff): ?int
+    public function exposureMinor(?array $tariff, ?int $durationMs = null): ?int
     {
         $rate = filter_var($tariff['rate_minor_per_minute'] ?? null, FILTER_VALIDATE_INT);
         if ($rate === false || $rate < 0) {
             return null;
         }
 
-        return $this->exposureMinutes() * $rate;
+        return $this->exposureMinutes($durationMs) * $rate;
     }
 
     /**
      * Evaluate whether a client campaign may admit another attempt.
      *
      * Client accounts require a wallet, a matching tariff and sufficient credit.
-     * Internal campaigns without a client remain outside client wallet billing.
+     * One-way campaigns pass the measured recording length so the hold covers the
+     * recording itself (`ceil(minutes) × rate`) multiplied by the eligible
+     * audience; interactive campaigns pass no duration and keep the configured
+     * maximum-call exposure. Internal campaigns without a client remain outside
+     * client wallet billing.
      */
-    public function admission(?int $clientId, ?array $tariff): array
+    public function admission(?int $clientId, ?array $tariff, ?int $durationMs = null, int $recipients = 1): array
     {
         $base = ['applicable' => false, 'allowed' => true, 'reason' => null, 'exposure_minor' => 0, 'available_minor' => 0, 'wallet' => null];
         if ($clientId === null) {
@@ -127,10 +148,14 @@ class Wallet
         if (! $this->matches($wallet, $tariff)) {
             return array_merge($base, ['reason' => 'currency_mismatch']);
         }
-        $exposure = $this->exposureMinor($tariff);
+        if ($durationMs !== null && $durationMs < 1) {
+            return array_merge($base, ['reason' => 'duration_missing']);
+        }
+        $exposure = $this->exposureMinor($tariff, $durationMs);
         if ($exposure === null) {
             return array_merge($base, ['reason' => 'tariff_not_priced']);
         }
+        $exposure *= max(0, $recipients);
         if ($wallet->available_minor < $exposure) {
             return array_merge($base, ['reason' => 'insufficient_credit', 'exposure_minor' => $exposure]);
         }
@@ -143,47 +168,76 @@ class Wallet
     {
         try {
             return DB::transaction(function () use ($attempt) {
-            $clientId = app(Tenancy::class)->ownerOf($attempt);
-            if ($clientId === null) {
-                return null;
-            }
-            $wallet = WalletAccount::where('client_id', $clientId)->lockForUpdate()->first();
-            if (! $wallet) {
-                throw new WalletDeclined('wallet_missing');
-            }
-            $existing = WalletReservation::where('call_attempt_id', $attempt->id)->first();
-            if ($existing) {
-                if ($existing->state === 'held') {
-                    return $existing;
+                $clientId = app(Tenancy::class)->ownerOf($attempt);
+                if ($clientId === null) {
+                    return null;
                 }
-                throw new WalletDeclined('reservation_'.$existing->state);
-            }
-            $tariff = $attempt->tariff_snapshot;
-            if (! $tariff) {
-                throw new WalletDeclined('tariff_missing');
-            }
-            if (! $this->matches($wallet, $tariff)) {
-                throw new WalletDeclined('currency_mismatch');
-            }
-            $exposure = $this->exposureMinor($tariff);
-            if ($exposure === null) {
-                throw new WalletDeclined('tariff_not_priced');
-            }
-            if ($wallet->available_minor < $exposure) {
-                throw new WalletDeclined('insufficient_credit', ['available_minor' => $wallet->available_minor, 'exposure_minor' => $exposure]);
-            }
-            $wallet->available_minor -= $exposure;
-            $wallet->reserved_minor += $exposure;
-            $wallet->save();
-            $reservation = WalletReservation::create([
-                'wallet_id' => $wallet->id, 'client_id' => $wallet->client_id, 'call_attempt_id' => $attempt->id,
-                'amount_minor' => $exposure, 'currency' => $wallet->currency, 'minor_unit_scale' => $wallet->minor_unit_scale,
-                'state' => 'held', 'reserved_at' => now(),
-            ]);
-            $this->entry($wallet, 'reservation', -$exposure, $exposure, $reservation, $attempt, null,
-                'Reserved maximum exposure for attempt '.$attempt->uuid, null, 'billing:reservation:'.$attempt->id);
+                $wallet = WalletAccount::where('client_id', $clientId)->lockForUpdate()->first();
+                if (! $wallet) {
+                    throw new WalletDeclined('wallet_missing');
+                }
+                $existing = WalletReservation::where('call_attempt_id', $attempt->id)->first();
+                if ($existing) {
+                    if ($existing->state === 'held') {
+                        return $existing;
+                    }
+                    throw new WalletDeclined('reservation_'.$existing->state);
+                }
+                $budget = $attempt->campaign_version_id ? WalletReservation::where('campaign_version_id', $attempt->campaign_version_id)
+                    ->where('campaign_recipient_id', $attempt->campaign_recipient_id)->whereNull('call_attempt_id')->where('state', 'held')->lockForUpdate()->first() : null;
+                if ($budget) {
+                    if ($budget->wallet_id !== $wallet->id || $budget->tariff_snapshot != $attempt->tariff_snapshot) {
+                        throw new WalletDeclined('currency_mismatch');
+                    }
+                    $budget->update(['call_attempt_id' => $attempt->id]);
 
-            return $reservation;
+                    return $budget;
+                }
+                $tariff = $attempt->tariff_snapshot;
+                if (! $tariff) {
+                    throw new WalletDeclined('tariff_missing');
+                }
+                if (! $this->matches($wallet, $tariff)) {
+                    throw new WalletDeclined('currency_mismatch');
+                }
+                $duration = $this->attemptDurationMs($attempt);
+                if ($duration !== null && $duration < 1) {
+                    throw new WalletDeclined('duration_missing');
+                }
+                $exposure = $this->exposureMinor($tariff, $duration);
+                if ($exposure === null) {
+                    throw new WalletDeclined('tariff_not_priced');
+                }
+                if ($wallet->available_minor < $exposure) {
+                    throw new WalletDeclined('insufficient_credit', ['available_minor' => $wallet->available_minor, 'exposure_minor' => $exposure]);
+                }
+                $wallet->available_minor -= $exposure;
+                $wallet->reserved_minor += $exposure;
+                $wallet->save();
+                $reservation = WalletReservation::create([
+                    'wallet_id' => $wallet->id,
+                    'client_id' => $wallet->client_id,
+                    'call_attempt_id' => $attempt->id,
+                    'amount_minor' => $exposure,
+                    'currency' => $wallet->currency,
+                    'minor_unit_scale' => $wallet->minor_unit_scale,
+                    'state' => 'held',
+                    'reserved_at' => now(),
+                ]);
+                $this->entry(
+                    $wallet,
+                    'reservation',
+                    -$exposure,
+                    $exposure,
+                    $reservation,
+                    $attempt,
+                    null,
+                    ($duration === null ? 'Reserved maximum exposure for attempt ' : 'Reserved recording cost for attempt ').$attempt->uuid,
+                    null,
+                    'billing:reservation:'.$attempt->id
+                );
+
+                return $reservation;
             });
         } catch (WalletDeclined $e) {
             if ($e->reason === 'insufficient_credit') {
@@ -195,6 +249,141 @@ class Wallet
             }
             throw $e;
         }
+    }
+
+    /**
+     * Measured recording length frozen into a one-way launch snapshot.
+     *
+     * Returns null for interactive attempts, which keep the configured maximum
+     * call exposure, and 0 when a one-way snapshot lost its measurement so the
+     * hold is refused instead of silently over-reserved.
+     */
+    public function attemptDurationMs(CallAttempt $attempt): ?int
+    {
+        $version = $attempt->campaign_version_id ? CampaignVersion::find($attempt->campaign_version_id) : null;
+        $snapshot = $version?->snapshot;
+
+        return ($snapshot['type'] ?? null) === 'one_way' ? (int) ($snapshot['broadcast']['audio_duration_ms'] ?? 0) : null;
+    }
+
+    /**
+     * Reserve every eligible first call atomically at campaign launch.
+     *
+     * The hold is the calculated recording cost only: the approved recording's
+     * billable minutes (rounded up like `ceil_minute_v1` settlement) at the
+     * frozen tariff rate, multiplied by the eligible contacts in the campaign
+     * audience. The configured maximum call duration is never used for one-way
+     * campaigns, so launching a 45-second recording for 500 contacts holds 500
+     * billed minutes rather than 500 maximum-length calls.
+     */
+    public function reserveCampaign(Campaign $campaign, CampaignVersion $version, User $actor): void
+    {
+        if ($campaign->client_id === null || $campaign->type !== 'one_way') {
+            return;
+        }
+        DB::transaction(function () use ($campaign, $version, $actor) {
+            $s = $version->snapshot['broadcast'];
+            $tariff = $s['reservation_tariff'] ?? app(Tariffs::class)->snapshot($campaign->client_id);
+            $duration = (int) ($s['audio_duration_ms'] ?? 0);
+            if ($duration < 1) {
+                throw ValidationException::withMessages(['broadcast' => self::message('duration_missing')]);
+            }
+            $wallet = WalletAccount::where('client_id', $campaign->client_id)->lockForUpdate()->firstOrFail();
+            if (! $tariff || ! $this->matches($wallet, $tariff)) {
+                throw ValidationException::withMessages(['broadcast' => 'Wallet and campaign tariff must match.']);
+            }
+            $perRecipient = $this->exposureMinor($tariff, $duration);
+            if ($perRecipient === null) {
+                throw ValidationException::withMessages(['broadcast' => self::message('tariff_not_priced')]);
+            }
+            $recipients = CampaignRecipient::where('campaign_id', $campaign->id)->where('status', 'pending')->orderBy('id')->get()
+                ->reject(fn (CampaignRecipient $recipient) => app(Readiness::class)->exclusion($recipient->contact_id, $recipient->phone_e164, $campaign->purpose) !== null)
+                ->reject(fn (CampaignRecipient $recipient) => WalletReservation::where('campaign_version_id', $version->id)
+                    ->where('campaign_recipient_id', $recipient->id)->exists())
+                ->values();
+            // A reviewed zero-rate tariff needs no hold, and a fully excluded
+            // audience holds nothing because no attempt can be dispatched.
+            if ($recipients->isEmpty() || $perRecipient < 1) {
+                return;
+            }
+            $total = $perRecipient * $recipients->count();
+            if ($wallet->available_minor < $total) {
+                throw ValidationException::withMessages(['broadcast' => 'Insufficient credit: '
+                    .self::amount($total, $wallet->minor_unit_scale).' '.$wallet->currency.' is required to hold the recording cost for '
+                    .number_format($recipients->count()).' eligible contacts. Ask Finance to top up the wallet before launching.']);
+            }
+            foreach ($recipients as $recipient) {
+                $wallet->available_minor -= $perRecipient;
+                $wallet->reserved_minor += $perRecipient;
+                $wallet->save();
+                $reservation = WalletReservation::create([
+                    'wallet_id' => $wallet->id,
+                    'client_id' => $campaign->client_id,
+                    'campaign_version_id' => $version->id,
+                    'campaign_recipient_id' => $recipient->id,
+                    'tariff_snapshot' => $tariff,
+                    'call_attempt_id' => null,
+                    'amount_minor' => $perRecipient,
+                    'currency' => $wallet->currency,
+                    'minor_unit_scale' => $wallet->minor_unit_scale,
+                    'state' => 'held',
+                    'reserved_at' => now(),
+                ]);
+                $this->entry(
+                    $wallet,
+                    'reservation',
+                    -$perRecipient,
+                    $perRecipient,
+                    $reservation,
+                    null,
+                    $actor,
+                    'Recording-cost hold for campaign '.$campaign->id.', recipient '.$recipient->id,
+                    null,
+                    'billing:campaign-reservation:'.$version->id.':'.$recipient->id
+                );
+            }
+        });
+    }
+
+    /** Return credit for recipients cancelled/excluded before an attempt was allocated. */
+    public function releaseCampaignBudget(int $campaignId, string $reason, ?int $recipientId = null): void
+    {
+        DB::transaction(function () use ($campaignId, $reason, $recipientId) {
+            $campaign = Campaign::findOrFail($campaignId);
+            if ($campaign->client_id === null) {
+                return;
+            }
+            $wallet = WalletAccount::where('client_id', $campaign->client_id)->lockForUpdate()->first();
+            if (! $wallet) {
+                return;
+            }
+            $query = WalletReservation::where('wallet_id', $wallet->id)->whereNull('call_attempt_id')->where('state', 'held')
+                ->whereIn('campaign_version_id', CampaignVersion::where('campaign_id', $campaignId)->select('id'));
+            if ($recipientId !== null) {
+                $query->where('campaign_recipient_id', $recipientId);
+            }
+            foreach ($query->lockForUpdate()->get() as $reservation) {
+                if ($wallet->reserved_minor < $reservation->amount_minor) {
+                    throw new LogicException('Wallet held balance is inconsistent.');
+                }
+                $wallet->reserved_minor -= $reservation->amount_minor;
+                $wallet->available_minor += $reservation->amount_minor;
+                $wallet->save();
+                $reservation->update(['state' => 'released', 'released_at' => now(), 'release_reason' => $reason]);
+                $this->entry(
+                    $wallet,
+                    'release',
+                    $reservation->amount_minor,
+                    -$reservation->amount_minor,
+                    $reservation,
+                    null,
+                    null,
+                    $reason,
+                    null,
+                    'billing:campaign-release:'.$reservation->id
+                );
+            }
+        });
     }
 
     /** Release a held reservation after a definitively unanswered call. */
@@ -216,11 +405,23 @@ class Wallet
             $wallet->available_minor += $amount;
             $wallet->save();
             $reservation->update(['state' => 'released', 'released_at' => now(), 'release_reason' => mb_substr($reason, 0, 255)]);
-            $this->entry($wallet, 'release', $amount, -$amount, $reservation, $attempt, $actor,
-                'Reservation released: '.$reason, null, 'billing:release:'.$attempt->id);
+            $this->entry(
+                $wallet,
+                'release',
+                $amount,
+                -$amount,
+                $reservation,
+                $attempt,
+                $actor,
+                'Reservation released: '.$reason,
+                null,
+                'billing:release:'.$attempt->id
+            );
             if ($actor) {
                 app(Foundation::class)->audit($actor, 'billing.wallet_hold_expired', $reservation, [
-                    'attempt_id' => $attempt->id, 'amount_minor' => $amount, 'reason' => $reason,
+                    'attempt_id' => $attempt->id,
+                    'amount_minor' => $amount,
+                    'reason' => $reason,
                 ]);
             }
 
@@ -239,7 +440,7 @@ class Wallet
     {
         $hours = max(1, min(24 * 30, $hours));
         $limit = max(1, min(1000, $limit));
-        $attemptIds = WalletReservation::where('state', 'held')
+        $attemptIds = WalletReservation::where('state', 'held')->whereNotNull('call_attempt_id')
             ->where('reserved_at', '<=', now()->subHours($hours))
             ->orderBy('id')->limit($limit)->pluck('call_attempt_id')->all();
         $released = 0;
@@ -303,17 +504,33 @@ class Wallet
             $wallet->available_minor -= $payable;
             $wallet->save();
             $reservation->update([
-                'state' => 'settled', 'settled_at' => now(), 'settled_minor' => $charge,
-                'shortfall_minor' => $shortfall, 'settlement_key' => 'billing:settlement:'.$attempt->id,
+                'state' => 'settled',
+                'settled_at' => now(),
+                'settled_minor' => $charge,
+                'shortfall_minor' => $shortfall,
+                'settlement_key' => 'billing:settlement:'.$attempt->id,
             ]);
-            $this->entry($wallet, 'settlement', $released - $payable, -$released, $reservation, $attempt, null,
-                'Settled rated attempt '.$attempt->uuid.($shortfall ? ' with uncovered shortfall' : ''), null, 'billing:settlement:'.$attempt->id);
+            $this->entry(
+                $wallet,
+                'settlement',
+                $released - $payable,
+                -$released,
+                $reservation,
+                $attempt,
+                null,
+                'Settled rated attempt '.$attempt->uuid.($shortfall ? ' with uncovered shortfall' : ''),
+                null,
+                'billing:settlement:'.$attempt->id
+            );
             if ($shortfall) {
                 app(Rating::class)->issue($attempt, 'wallet_shortfall', 'Rated charge '.self::amount($charge, $wallet->minor_unit_scale).' '.$wallet->currency
                     .' exceeded available credit; uncovered '.self::amount($shortfall, $wallet->minor_unit_scale).' '.$wallet->currency.'.');
                 AuditLog::create([
-                    'client_id' => $wallet->client_id, 'actor_id' => null, 'action' => 'billing.wallet_shortfall',
-                    'entity_type' => $attempt->getMorphClass(), 'entity_id' => $attempt->id,
+                    'client_id' => $wallet->client_id,
+                    'actor_id' => null,
+                    'action' => 'billing.wallet_shortfall',
+                    'entity_type' => $attempt->getMorphClass(),
+                    'entity_id' => $attempt->id,
                     'details' => ['charge_minor' => $charge, 'paid_minor' => $payable, 'shortfall_minor' => $shortfall, 'currency' => $wallet->currency],
                     'created_at' => now(),
                 ]);
@@ -330,7 +547,8 @@ class Wallet
     {
         Gate::forUser($actor)->authorize('billing.manage');
         $data = Validator::make(['currency' => $currency, 'minor_unit_scale' => $scale, 'reason' => $reason], [
-            'currency' => 'required|regex:/\A[A-Z]{3}\z/', 'minor_unit_scale' => 'required|integer|min:0|max:6',
+            'currency' => 'required|regex:/\A[A-Z]{3}\z/',
+            'minor_unit_scale' => 'required|integer|min:0|max:6',
             'reason' => 'required|string|min:3|max:255',
         ])->validate();
 
@@ -348,11 +566,16 @@ class Wallet
                     .$tariff['currency'].' / '.$tariff['minor_unit_scale'].').']);
             }
             $wallet = WalletAccount::create([
-                'client_id' => $locked->id, 'currency' => $data['currency'], 'minor_unit_scale' => (int) $data['minor_unit_scale'],
-                'available_minor' => 0, 'reserved_minor' => 0,
+                'client_id' => $locked->id,
+                'currency' => $data['currency'],
+                'minor_unit_scale' => (int) $data['minor_unit_scale'],
+                'available_minor' => 0,
+                'reserved_minor' => 0,
             ]);
             app(Foundation::class)->audit($actor, 'billing.wallet_opened', $wallet, [
-                'currency' => $wallet->currency, 'minor_unit_scale' => $wallet->minor_unit_scale, 'reason' => $data['reason'],
+                'currency' => $wallet->currency,
+                'minor_unit_scale' => $wallet->minor_unit_scale,
+                'reason' => $data['reason'],
             ]);
 
             return $wallet;
@@ -390,8 +613,16 @@ class Wallet
             $wallet->save();
 
             return $this->entry(
-                $wallet, 'funding', $intent->amount_minor, 0, null, null, null,
-                'Online top-up '.$intent->public_id, 'Provider event '.$eventId, $key,
+                $wallet,
+                'funding',
+                $intent->amount_minor,
+                0,
+                null,
+                null,
+                null,
+                'Online top-up '.$intent->public_id,
+                'Provider event '.$eventId,
+                $key,
             );
         });
     }
@@ -401,8 +632,10 @@ class Wallet
     {
         Gate::forUser($actor)->authorize('billing.manage');
         $data = Validator::make(compact('kind', 'amount', 'reason', 'approval'), [
-            'kind' => 'required|in:funding,adjustment', 'amount' => 'required|string|max:32',
-            'reason' => 'required|string|min:3|max:255', 'approval' => 'required|string|min:3|max:255',
+            'kind' => 'required|in:funding,adjustment',
+            'amount' => 'required|string|max:32',
+            'reason' => 'required|string|min:3|max:255',
+            'approval' => 'required|string|min:3|max:255',
         ])->validate();
         $delta = $this->parse($data['amount'], $wallet->minor_unit_scale, true);
         if ($delta === 0) {
@@ -431,7 +664,10 @@ class Wallet
             $wallet->save();
             $entry = $this->entry($wallet, $data['kind'], $delta, 0, null, null, $actor, $data['reason'], $data['approval'], $key);
             app(Foundation::class)->audit($actor, 'billing.wallet_'.$data['kind'], $wallet, [
-                'entry_id' => $entry->id, 'amount_minor' => $delta, 'currency' => $wallet->currency, 'approval_reference' => $data['approval'],
+                'entry_id' => $entry->id,
+                'amount_minor' => $delta,
+                'currency' => $wallet->currency,
+                'approval_reference' => $data['approval'],
             ]);
 
             return $entry;
@@ -461,8 +697,13 @@ class Wallet
             ?: mb_substr('Manual credit by '.$actor->name.' (user #'.$actor->id.') on '.now()->toIso8601String(), 0, 255);
 
         return $this->post(
-            $actor, $wallet, 'funding', self::amount($minor, $wallet->minor_unit_scale),
-            $data['reason'], $reference, $key ?: 'admin:credit:'.Str::uuid(),
+            $actor,
+            $wallet,
+            'funding',
+            self::amount($minor, $wallet->minor_unit_scale),
+            $data['reason'],
+            $reference,
+            $key ?: 'admin:credit:'.Str::uuid(),
         );
     }
 
@@ -471,7 +712,8 @@ class Wallet
     {
         Gate::forUser($actor)->authorize('billing.manage');
         $data = Validator::make(compact('reason', 'approval'), [
-            'reason' => 'required|string|min:3|max:255', 'approval' => 'required|string|min:3|max:255',
+            'reason' => 'required|string|min:3|max:255',
+            'approval' => 'required|string|min:3|max:255',
         ])->validate();
 
         return DB::transaction(function () use ($actor, $wallet, $entry, $data) {
@@ -492,10 +734,24 @@ class Wallet
             }
             $wallet->available_minor += $delta;
             $wallet->save();
-            $reversal = $this->entry($wallet, 'reversal', $delta, 0, null, null, $actor, $data['reason'], $data['approval'],
-                'billing:reversal:'.$entry->id, $entry);
+            $reversal = $this->entry(
+                $wallet,
+                'reversal',
+                $delta,
+                0,
+                null,
+                null,
+                $actor,
+                $data['reason'],
+                $data['approval'],
+                'billing:reversal:'.$entry->id,
+                $entry
+            );
             app(Foundation::class)->audit($actor, 'billing.wallet_reversal', $wallet, [
-                'entry_id' => $reversal->id, 'reversal_of' => $entry->id, 'amount_minor' => $delta, 'approval_reference' => $data['approval'],
+                'entry_id' => $reversal->id,
+                'reversal_of' => $entry->id,
+                'amount_minor' => $delta,
+                'approval_reference' => $data['approval'],
             ]);
 
             return $reversal;
@@ -561,10 +817,12 @@ class Wallet
         $covered = intdiv($wallet->available_minor, $exposure);
 
         return [
-            'exposure_minor' => $exposure, 'covered_calls' => $covered,
+            'exposure_minor' => $exposure,
+            'covered_calls' => $covered,
             // Billing rounds each answered call up to whole minutes. Held credit is unavailable.
             'remaining_minutes' => intdiv($wallet->available_minor, (int) $tariff['rate_minor_per_minute']),
-            'low' => $covered < 1, 'reason' => $covered < 1 ? 'insufficient_credit' : null,
+            'low' => $covered < 1,
+            'reason' => $covered < 1 ? 'insufficient_credit' : null,
         ];
     }
 
@@ -613,8 +871,11 @@ class Wallet
             'available_match' => $availableMatch,
             'reserved_match' => $reservedMatch,
             'held_match' => $heldMatch,
-            'ledger_available_minor' => $available, 'ledger_reserved_minor' => $reserved, 'held_minor' => $held,
-            'ok' => $issues === [], 'issues' => $issues,
+            'ledger_available_minor' => $available,
+            'ledger_reserved_minor' => $reserved,
+            'held_minor' => $held,
+            'ok' => $issues === [],
+            'issues' => $issues,
         ], $chain, $lifecycle);
     }
 
@@ -702,13 +963,23 @@ class Wallet
         }
 
         return WalletLedgerEntry::create([
-            'wallet_id' => $wallet->id, 'client_id' => $wallet->client_id,
-            'call_attempt_id' => $attempt?->id, 'wallet_reservation_id' => $reservation?->id,
-            'type' => $type, 'available_delta_minor' => $availableDelta, 'reserved_delta_minor' => $reservedDelta,
-            'available_after_minor' => $wallet->available_minor, 'reserved_after_minor' => $wallet->reserved_minor,
-            'currency' => $wallet->currency, 'minor_unit_scale' => $wallet->minor_unit_scale,
-            'reason' => mb_substr($reason, 0, 255), 'approval_reference' => $approval ? mb_substr($approval, 0, 255) : null,
-            'actor_id' => $actor?->id, 'idempotency_key' => $key, 'reversal_of_id' => $reversalOf?->id, 'created_at' => now(),
+            'wallet_id' => $wallet->id,
+            'client_id' => $wallet->client_id,
+            'call_attempt_id' => $attempt?->id,
+            'wallet_reservation_id' => $reservation?->id,
+            'type' => $type,
+            'available_delta_minor' => $availableDelta,
+            'reserved_delta_minor' => $reservedDelta,
+            'available_after_minor' => $wallet->available_minor,
+            'reserved_after_minor' => $wallet->reserved_minor,
+            'currency' => $wallet->currency,
+            'minor_unit_scale' => $wallet->minor_unit_scale,
+            'reason' => mb_substr($reason, 0, 255),
+            'approval_reference' => $approval ? mb_substr($approval, 0, 255) : null,
+            'actor_id' => $actor?->id,
+            'idempotency_key' => $key,
+            'reversal_of_id' => $reversalOf?->id,
+            'created_at' => now(),
         ]);
     }
 }

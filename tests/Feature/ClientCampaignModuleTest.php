@@ -5,13 +5,17 @@ namespace Tests\Feature;
 use App\Models\AudioFile;
 use App\Models\Campaign;
 use App\Models\CampaignRun;
+use App\Models\CampaignVersion;
 use App\Models\Client;
 use App\Models\Contact;
 use App\Models\ContactGroup;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
 use App\Models\User;
+use App\Models\WalletAccount;
+use App\Models\WalletReservation;
 use App\Services\Billing\Tariffs;
+use App\Services\Billing\Wallet;
 use App\Services\Broadcast\CampaignPolicy;
 use App\Services\Broadcast\Engine;
 use App\Services\Broadcast\IvrDesigner;
@@ -66,7 +70,7 @@ class ClientCampaignModuleTest extends TestCase
         $tariffs = app(Tariffs::class);
         $tariff = $tariffs->create($this->admin, ['code' => 'prepaid-fixture', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2, 'rate_minor_per_minute' => 30, 'playback_policy' => 'charge_answered'], 'Test prepaid rate');
         $tariffs->assign($this->admin, $this->client, $tariff, 'Test prepaid setup');
-        $wallets = app(\App\Services\Billing\Wallet::class);
+        $wallets = app(Wallet::class);
         $wallet = $wallets->open($this->admin, $this->client, 'GHS', 2, 'Test prepaid wallet');
         $wallets->post($this->admin, $wallet, 'funding', '100.00', 'Test prepaid funding', 'TEST-PREPAID', 'client-campaign-prepaid');
         $this->owner = User::factory()->create();
@@ -77,7 +81,7 @@ class ClientCampaignModuleTest extends TestCase
         $accounts->member($this->admin, $other, $this->foreign, 'owner');
         TrunkProfile::create(['name' => 'client-module-11', 'caller_id' => '0241000100', 'max_channels' => 10, 'reserved_channels' => 2, 'safe_channels' => 5, 'max_cps' => 2, 'number_format' => 'national', 'active' => true, 'verified_at' => now(), 'verified_by' => $this->admin->id, 'evidence' => 'Test capacity']);
         Storage::disk('local')->put('client-11.wav', 'fixture');
-        $this->audio = AudioFile::create(['client_id' => $this->client->id, 'uploaded_by' => $this->owner->id, 'uuid' => (string) Str::uuid(), 'name' => 'Approved URL prompt', 'status' => 'approved', 'storage_key' => 'client-11.wav', 'checksum' => hash('sha256', 'fixture'), 'approved_by' => $this->admin->id, 'approved_at' => now()]);
+        $this->audio = AudioFile::create(['client_id' => $this->client->id, 'uploaded_by' => $this->owner->id, 'uuid' => (string) Str::uuid(), 'name' => 'Approved URL prompt', 'status' => 'approved', 'storage_key' => 'client-11.wav', 'checksum' => hash('sha256', 'fixture'), 'duration' => 30, 'approved_by' => $this->admin->id, 'approved_at' => now()]);
         $this->contact = app(Tenancy::class)->run($this->client->id, fn () => app(Foundation::class)->createContact($this->owner, ['name' => 'Customer', 'phone' => '0241234567', 'source' => 'Form']));
         $this->group = ContactGroup::create(['client_id' => $this->client->id, 'owner_id' => $this->owner->id, 'name' => 'Colleague audience']);
         $this->group->contacts()->attach($this->contact);
@@ -199,6 +203,68 @@ class ClientCampaignModuleTest extends TestCase
         $this->assertSame(1, CampaignRun::where('campaign_id', $campaign->id)->count());
     }
 
+    public function test_launch_holds_only_the_recorded_minutes_for_the_campaign_audience(): void
+    {
+        $second = app(Tenancy::class)->run($this->client->id, fn () => app(Foundation::class)->createContact($this->owner, ['name' => 'Second customer', 'phone' => '0241234568', 'source' => 'Form']));
+        $this->group->contacts()->attach($second);
+        $campaign = $this->campaign();
+        $wallet = WalletAccount::where('client_id', $this->client->id)->firstOrFail();
+
+        // A 30-second recording at 30 minor units per minute rounds up to one
+        // billed minute per contact, so two contacts reserve 60 minor units.
+        $this->actingAs($this->owner)->post('/campaigns/'.$campaign->id.'/control', ['action' => 'start', 'reason' => 'Reserve the audience'])->assertRedirect()->assertSessionHasNoErrors();
+
+        $wallet->refresh();
+        $version = CampaignVersion::where('campaign_id', $campaign->id)->latest('version')->firstOrFail();
+        $holds = WalletReservation::where('campaign_version_id', $version->id)->whereNull('call_attempt_id')->get();
+        $this->assertCount(2, $holds);
+        $this->assertSame(60, $holds->sum('amount_minor'));
+        $this->assertSame(60, $wallet->reserved_minor);
+        $this->assertSame(10000 - 60, $wallet->available_minor);
+        $this->assertTrue(app(Wallet::class)->verify($wallet)['ok']);
+
+        $this->post('/campaigns/'.$campaign->id.'/control', ['action' => 'cancel', 'reason' => 'Operator cancelled'])->assertRedirect()->assertSessionHasNoErrors();
+
+        $wallet->refresh();
+        $this->assertSame(0, $wallet->reserved_minor);
+        $this->assertSame(10000, $wallet->available_minor);
+        $this->assertSame(0, WalletReservation::where('campaign_version_id', $version->id)->where('state', 'held')->count());
+        $this->assertTrue(app(Wallet::class)->verify($wallet)['ok']);
+    }
+
+    public function test_launch_refuses_when_credit_cannot_hold_the_audience_recording_cost(): void
+    {
+        $second = app(Tenancy::class)->run($this->client->id, fn () => app(Foundation::class)->createContact($this->owner, ['name' => 'Third customer', 'phone' => '0241234569', 'source' => 'Form']));
+        $this->group->contacts()->attach($second);
+        $campaign = $this->campaign();
+        $wallet = WalletAccount::where('client_id', $this->client->id)->firstOrFail();
+        app(Wallet::class)->post($this->admin, $wallet, 'adjustment', '-99.60', 'Reduce test credit', 'FIN-TEST');
+
+        // 0.40 GHS remain; two 30-second contacts need 0.60 GHS held in full.
+        $this->actingAs($this->owner)->post('/campaigns/'.$campaign->id.'/control', ['action' => 'start', 'reason' => 'Attempt'])->assertSessionHasErrors('broadcast');
+
+        $this->assertSame('ready', $campaign->fresh()->status);
+        $this->assertDatabaseCount('campaign_runs', 0);
+        $this->assertSame(40, $wallet->refresh()->available_minor);
+        $this->assertSame(0, $wallet->reserved_minor);
+        $this->assertSame(0, WalletReservation::where('wallet_id', $wallet->id)->count());
+    }
+
+    public function test_launch_with_an_unmeasured_recording_is_refused_without_holding_credit(): void
+    {
+        $this->audio->update(['duration' => null]);
+        $campaign = $this->campaign();
+
+        $this->actingAs($this->owner)->post('/campaigns/'.$campaign->id.'/control', ['action' => 'start', 'reason' => 'Attempt'])->assertSessionHasErrors('broadcast');
+
+        $this->assertSame('ready', $campaign->fresh()->status);
+        $this->assertDatabaseCount('campaign_runs', 0);
+        $this->assertDatabaseCount('campaign_versions', 0);
+        $wallet = WalletAccount::where('client_id', $this->client->id)->firstOrFail();
+        $this->assertSame(0, $wallet->reserved_minor);
+        $this->assertSame(10000, $wallet->available_minor);
+    }
+
     public function test_real_admission_captures_the_assigned_tariff_before_any_originate(): void
     {
         $tariffs = app(Tariffs::class);
@@ -217,5 +283,13 @@ class ClientCampaignModuleTest extends TestCase
         $this->assertSame($tariff->id, $attempt->tariff_snapshot['id']);
         $this->assertSame('ceil_minute_v1', $attempt->tariff_snapshot['policy_version']);
         $this->assertNull($attempt->sent_at);
+
+        // Dispatch consumes the launch hold for this recipient instead of
+        // reserving the recording cost a second time.
+        $wallet = WalletAccount::where('client_id', $this->client->id)->firstOrFail();
+        $this->assertSame(30, $wallet->reserved_minor);
+        $this->assertSame(10000 - 30, $wallet->available_minor);
+        $this->assertSame(0, WalletReservation::where('wallet_id', $wallet->id)->whereNull('call_attempt_id')->where('state', 'held')->count());
+        $this->assertSame($attempt->id, WalletReservation::where('wallet_id', $wallet->id)->where('state', 'held')->firstOrFail()->call_attempt_id);
     }
 }

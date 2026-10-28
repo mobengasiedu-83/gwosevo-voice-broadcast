@@ -60,6 +60,17 @@ class DashboardTest extends TestCase
         $this->get('/dashboard/wallboard')->assertForbidden();
     }
 
+    public function test_filter_reset_controls_use_the_standard_secondary_button(): void
+    {
+        $user = $this->user('Super Administrator');
+
+        foreach (['/dashboard', '/dashboard/live', '/dashboard/wallboard'] as $url) {
+            $this->actingAs($user)->get($url)->assertOk()
+                ->assertSee('class="button secondary" href="'.url($url).'" aria-label="Reset filters">Reset</a>', false)
+                ->assertDontSee('reset-link', false);
+        }
+    }
+
     public function test_scoped_managers_cannot_read_other_campaign_metrics_calls_or_events(): void
     {
         $a = $this->user('Campaign Manager');

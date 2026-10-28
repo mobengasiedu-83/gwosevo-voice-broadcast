@@ -1,9 +1,9 @@
 @php
-    $scale = $estimate['minor_unit_scale'] ?? 0;
-    $money = function (?int $minor) use ($scale): string {
-        return $minor === null ? '—' : \App\Services\Billing\CampaignEstimate::money($minor, $scale);
-    };
-    $walletCurrency = $estimate['wallet_currency'] ?? $estimate['currency'];
+$scale = $estimate['minor_unit_scale'] ?? 0;
+$money = function (?int $minor) use ($scale): string {
+return $minor === null ? '—' : \App\Services\Billing\CampaignEstimate::money($minor, $scale);
+};
+$walletCurrency = $estimate['wallet_currency'] ?? $estimate['currency'];
 @endphp
 <section class="campaign-estimate" aria-labelledby="campaign-estimate-title">
     <h2 id="campaign-estimate-title">Credit forecast</h2>
@@ -14,11 +14,11 @@
             <strong>{{ number_format($estimate['audience_total']) }}</strong>
             <small>
                 @if($estimate['group_total'] > 0)
-                    {{ number_format($estimate['group_total']) }} in the selected group @if($estimate['audience_total'] > $estimate['group_total'])· {{ number_format($estimate['audience_total'] - $estimate['group_total']) }} added by ID @endif
+                {{ number_format($estimate['group_total']) }} in the selected group @if($estimate['audience_total'] > $estimate['group_total'])· {{ number_format($estimate['audience_total'] - $estimate['group_total']) }} added by ID @endif
                 @elseif($estimate['audience_total'] > 0)
-                    {{ number_format($estimate['audience_total']) }} added by contact ID
+                {{ number_format($estimate['audience_total']) }} added by contact ID
                 @else
-                    Choose a group or add contact IDs
+                Choose a group or add contact IDs
                 @endif
             </small>
         </div>
@@ -32,9 +32,9 @@
             <strong>{{ $estimate['duration_label'] ?? '—' }}</strong>
             <small>
                 @if($estimate['minutes_per_call'] !== null)
-                    {{ number_format($estimate['minutes_per_call']) }} billable {{ $estimate['minutes_per_call'] === 1 ? 'minute' : 'minutes' }} per answered call (rounded up)
+                {{ number_format($estimate['minutes_per_call']) }} billable {{ $estimate['minutes_per_call'] === 1 ? 'minute' : 'minutes' }} per answered call (rounded up)
                 @else
-                    Select a recording to price calls
+                Select a recording to price calls
                 @endif
             </small>
         </div>
@@ -43,9 +43,12 @@
             <strong>{{ $estimate['total_minor'] === null ? '—' : $money($estimate['total_minor']).' '.$estimate['currency'] }}</strong>
             <small>
                 @if($estimate['per_call_minor'] !== null)
-                    {{ number_format($estimate['eligible']) }} × {{ $money($estimate['per_call_minor']) }} {{ $estimate['currency'] }} per answered call
+                {{ number_format($estimate['eligible']) }} × {{ $money($estimate['per_call_minor']) }} {{ $estimate['currency'] }} per answered call
+                @if(($estimate['campaign_hold_minor'] ?? null) !== null)
+                · held in full when the campaign starts
+                @endif
                 @else
-                    Not priced yet
+                Not priced yet
                 @endif
             </small>
         </div>
@@ -54,9 +57,9 @@
             <strong>{{ $estimate['available_minor'] === null ? '—' : $money($estimate['available_minor']).' '.$walletCurrency }}</strong>
             <small>
                 @if($estimate['available_minor'] === null)
-                    {{ $estimate['billing_applicable'] ? 'No wallet balance available' : 'Internal campaign · not wallet-billed' }}
+                {{ $estimate['billing_applicable'] ? 'No wallet balance available' : 'Internal campaign · not wallet-billed' }}
                 @else
-                    Open holds are already excluded
+                Open holds are already excluded
                 @endif
             </small>
         </div>
@@ -65,17 +68,17 @@
             <strong>{{ $estimate['additional_minor'] === null ? '—' : $money($estimate['additional_minor']).' '.$estimate['currency'] }}</strong>
             <small>
                 @if($estimate['additional_minor'] === null)
-                    Add a tariff and wallet to compare
+                Add a tariff and wallet to compare
                 @elseif($estimate['additional_minor'] === 0)
-                    Balance covers all {{ number_format($estimate['eligible']) }} calls
+                Balance covers all {{ number_format($estimate['eligible']) }} calls
                 @else
-                    Covers {{ number_format((int) $estimate['covered_calls']) }} of {{ number_format($estimate['eligible']) }} calls
+                Covers {{ number_format((int) $estimate['covered_calls']) }} of {{ number_format($estimate['eligible']) }} calls
                 @endif
             </small>
         </div>
     </div>
     @foreach($estimate['messages'] as $message)
-        <p class="notice {{ $message['tone'] === 'warning' ? 'warning' : '' }}">{{ $message['text'] }}</p>
+    <p class="notice {{ $message['tone'] === 'warning' ? 'warning' : '' }}">{{ $message['text'] }}</p>
     @endforeach
     <p>Consent evidence is recorded for awareness and is not a dialing gate. DND/suppression is rechecked for every recipient immediately before sending.</p>
 </section>

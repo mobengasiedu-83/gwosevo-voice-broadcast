@@ -52,17 +52,26 @@ class CampaignEstimateTest extends TestCase
         }
 
         $this->audio = app(Tenancy::class)->run($this->client->id, fn () => AudioFile::create([
-            'client_id' => $this->client->id, 'uuid' => (string) Str::uuid(), 'name' => 'Update',
-            'storage_key' => 'audio/update.wav', 'checksum' => str_repeat('a', 64), 'duration' => 45,
-            'status' => 'approved', 'uploaded_by' => $this->member->id,
+            'client_id' => $this->client->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Update',
+            'storage_key' => 'audio/update.wav',
+            'checksum' => str_repeat('a', 64),
+            'duration' => 45,
+            'status' => 'approved',
+            'uploaded_by' => $this->member->id,
         ]));
     }
 
     private function tariff(int $rate = 30): void
     {
         $tariff = app(Tariffs::class)->create($this->admin, [
-            'code' => 'forecast-test', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2,
-            'rate_minor_per_minute' => $rate, 'playback_policy' => 'charge_answered',
+            'code' => 'forecast-test',
+            'version' => 1,
+            'currency' => 'GHS',
+            'minor_unit_scale' => 2,
+            'rate_minor_per_minute' => $rate,
+            'playback_policy' => 'charge_answered',
         ], 'Test-only approved fixture');
         app(Tariffs::class)->assign($this->admin, $this->client, $tariff, 'Test-only assignment');
     }
@@ -84,16 +93,35 @@ class CampaignEstimateTest extends TestCase
         ], $params)));
     }
 
-    public function test_audio_budget_does_not_imply_enough_credit_for_admission(): void
+    public function test_one_way_holds_the_measured_recording_cost_not_the_maximum_call_duration(): void
     {
         config()->set('billing.max_call_seconds', 900);
         $this->tariff();
         $this->wallet('1.00');
-        $this->estimate()->assertOk()->assertJsonPath('estimate.affordable', true)
+
+        // A 45-second recording rounds up to one billed minute per contact at
+        // 30 minor units, so the launch hold is 90 minor units — not 15 maximum
+        // call minutes multiplied by the audience.
+        $this->estimate()->assertOk()
+            ->assertJsonPath('estimate.per_call_minor', 30)
+            ->assertJsonPath('estimate.call_hold_minor', 30)
+            ->assertJsonPath('estimate.campaign_hold_minor', 90)
+            ->assertJsonPath('estimate.can_start_call', true)
+            ->assertJsonPath('estimate.admission_reason', null)
+            ->assertDontSee('maximum call hold');
+    }
+
+    public function test_one_way_admission_requires_the_recording_cost_for_the_whole_audience(): void
+    {
+        $this->tariff();
+        $this->wallet('0.60');
+
+        $this->estimate()->assertOk()
+            ->assertJsonPath('estimate.total_minor', 90)
+            ->assertJsonPath('estimate.campaign_hold_minor', 90)
             ->assertJsonPath('estimate.can_start_call', false)
-            ->assertJsonPath('estimate.call_hold_minor', 450)
             ->assertJsonPath('estimate.admission_reason', 'insufficient_credit')
-            ->assertSee('New calls cannot start');
+            ->assertSee('available credit is below the 0.90 GHS recording cost for the eligible audience');
     }
 
     public function test_it_prices_one_attempt_for_each_eligible_contact(): void
@@ -109,6 +137,8 @@ class CampaignEstimateTest extends TestCase
             ->assertJsonPath('estimate.duration_label', '0:45')
             ->assertJsonPath('estimate.minutes_per_call', 1)
             ->assertJsonPath('estimate.per_call_minor', 30)
+            ->assertJsonPath('estimate.call_hold_minor', 30)
+            ->assertJsonPath('estimate.campaign_hold_minor', 90)
             ->assertJsonPath('estimate.total_minor', 90)
             ->assertJsonPath('estimate.available_minor', 10000)
             ->assertJsonPath('estimate.additional_minor', 0)
@@ -156,8 +186,11 @@ class CampaignEstimateTest extends TestCase
         $this->actingAs($this->member)->post('/contacts/'.$contacts[0]->id.'/suppress', ['reason' => 'Opted out'])->assertRedirect();
         foreach ($contacts->take(2) as $contact) {
             $contact->consents()->create([
-                'purpose' => 'Updates', 'legal_basis' => 'Consent', 'source' => 'Form',
-                'evidence_ref' => 'Form-'.$contact->id, 'granted_at' => now()->subDay(),
+                'purpose' => 'Updates',
+                'legal_basis' => 'Consent',
+                'source' => 'Form',
+                'evidence_ref' => 'Form-'.$contact->id,
+                'granted_at' => now()->subDay(),
             ]);
         }
         $contacts[1]->consents()->firstOrFail()->update(['revoked_at' => now()]);
@@ -215,7 +248,9 @@ class CampaignEstimateTest extends TestCase
     public function test_internal_campaigns_are_not_wallet_billed(): void
     {
         $this->actingAs($this->admin)->getJson(route('campaigns.estimate', [
-            'source_group_id' => $this->group->id, 'audio_id' => $this->audio->id, 'type' => 'one_way',
+            'source_group_id' => $this->group->id,
+            'audio_id' => $this->audio->id,
+            'type' => 'one_way',
         ]))
             ->assertOk()
             ->assertJsonPath('estimate.billing_applicable', false)
@@ -248,11 +283,24 @@ class CampaignEstimateTest extends TestCase
         $this->actingAs($this->member);
 
         $campaign = app(Workspace::class)->save($this->member, null, [
-            'name' => 'Forecast campaign', 'purpose' => 'Updates', 'type' => 'one_way', 'dialing_strategy' => 'direct',
-            'timezone' => 'Africa/Accra', 'audio_id' => $this->audio->id, 'source_group_id' => $this->group->id,
-            'contact_ids' => '', 'scheduled_at' => null, 'window_start' => '08:00', 'window_end' => '18:00',
-            'concurrency' => 2, 'cps' => 1, 'max_attempts' => 1, 'retry_delay_seconds' => 300, 'priority' => 5,
-            'ivr_flow_id' => null, 'caller_id' => null,
+            'name' => 'Forecast campaign',
+            'purpose' => 'Updates',
+            'type' => 'one_way',
+            'dialing_strategy' => 'direct',
+            'timezone' => 'Africa/Accra',
+            'audio_id' => $this->audio->id,
+            'source_group_id' => $this->group->id,
+            'contact_ids' => '',
+            'scheduled_at' => null,
+            'window_start' => '08:00',
+            'window_end' => '18:00',
+            'concurrency' => 2,
+            'cps' => 1,
+            'max_attempts' => 1,
+            'retry_delay_seconds' => 300,
+            'priority' => 5,
+            'ivr_flow_id' => null,
+            'caller_id' => null,
         ]);
 
         $this->get(route('campaigns.edit', $campaign))

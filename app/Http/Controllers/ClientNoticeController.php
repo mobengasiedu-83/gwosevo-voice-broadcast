@@ -4,14 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\Clients\Notices;
+use App\Services\Clients\Tenancy;
 use App\Services\Notifications\Center;
+use App\Services\Notifications\Preferences;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class ClientNoticeController extends Controller
 {
-    public function index(Request $request, Notices $notices, Center $center)
+    public function index(Request $request, Notices $notices, Center $center, Preferences $preferences)
     {
         Gate::authorize('dashboard.view');
         $filter = $request->validate(['category' => 'nullable|in:'.implode(',', Center::CATEGORIES)]);
@@ -23,8 +25,20 @@ class ClientNoticeController extends Controller
             'alerts' => $center->page($user, $filter['category'] ?? null),
             'alertSummary' => $center->summary($user),
             'deliveries' => $center->deliveryPage($user),
+            'eventPreferences' => $preferences->options($user),
             'category' => $filter['category'] ?? null,
         ])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function preferences(Request $request, Preferences $preferences)
+    {
+        Gate::authorize('dashboard.view');
+        $user = $request->user();
+        $tenancy = app(Tenancy::class);
+        abort_unless($tenancy->membership($user) && $tenancy->usable($user), 403);
+        $preferences->update($user, $request->validate($preferences->rules()));
+
+        return back()->with('status', 'Event notification preferences saved. Alerts stay in your inbox either way.');
     }
 
     public function read(Request $request, Notices $notices)

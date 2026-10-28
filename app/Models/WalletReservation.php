@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use LogicException;
 
 /**
- * A credit hold for exactly one call attempt. Once settled or released a
+ * A credit hold for one campaign recipient, allocated to its first call attempt. Once settled or released a
  * reservation is final; settlement may happen at most once per attempt.
  */
 class WalletReservation extends Model
@@ -18,7 +18,7 @@ class WalletReservation extends Model
     protected function casts(): array
     {
         return [
-            'amount_minor' => 'integer', 'settled_minor' => 'integer', 'shortfall_minor' => 'integer',
+            'tariff_snapshot' => 'array', 'amount_minor' => 'integer', 'settled_minor' => 'integer', 'shortfall_minor' => 'integer',
             'minor_unit_scale' => 'integer', 'reserved_at' => 'datetime', 'settled_at' => 'datetime', 'released_at' => 'datetime',
         ];
     }

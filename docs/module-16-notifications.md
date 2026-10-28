@@ -9,12 +9,26 @@ Notification failures never roll back the business event that raised them. A pro
 | Event key | Category | Audience | In-app |
 | --- | --- | --- | --- |
 | `audio.approved`, `audio.rejected` | `review` | The active member who uploaded the recording, unless they made the decision. | No; delivered only, because the audit-backed client notices already show the decision. |
+| `audio.submitted` | `review` | Staff reviewers — super administrators, administrators and approvers — excluding the uploader's own login. | Yes |
 | `campaign.review.approve`, `campaign.review.reject` | `campaign` | Active account owners plus the campaign owner. | Yes |
-| `campaign.completed` | `campaign` | Active account owners plus the campaign owner. | Yes |
+| `campaign.completed` | `campaign` | Active account owners plus the campaign owner. Email and SMS only after that login opts in. | Yes |
 | `billing.low_balance` | `billing` | Every active member of the client account. | Yes |
 | `payment.succeeded`, `payment.failed`, `payment.cancelled` | `payment` | The active member who initiated the top-up. | Yes |
 
 Low-credit alerts use the configured threshold, or one full call hold when no fixed threshold is configured. They are deduplicated per wallet and cooldown window: a burst of declined calls produces one alert, not one per attempt. Rejected campaign and audio alerts include the reviewer's reason.
+
+Audio review alerts (`audio.submitted`) are raised the moment a client recording becomes reviewable, so approvals do not wait for a reviewer to open the library. WAV uploads alert immediately; converted sources alert from the conversion worker only after the verified PCM WAV exists, and a client resubmission after rejection raises a fresh alert. They are email-only because SMS would add cost without speeding the review, they include an in-app copy for the staff bell and inbox, and they skip the uploader's own login. Recipients are resolved from the `audio.approve` ability, which covers the seeded Super Administrator, Administrator and Approver roles while excluding client logins and staff roles such as Analyst or Operator.
+
+## Per-event email and SMS opt-ins
+
+Campaign-completion copies are the first event covered by client-controlled subscriptions. Both channels start switched off, so a newly onboarded client receives the in-app alert only until they choose otherwise.
+
+- The toggles live on the client **Account → Notifications** page (`/account/notifications`, `POST /account/notifications/preferences`). The account profile page links to them from its notification-display section.
+- Choices are stored as booleans in `users.portal_preferences` (`campaign_completed_email`, `campaign_completed_sms`) on the member's own login, so each owner opts in separately and one member's choice never changes a colleague's or the staff copy. A missing key, `null` or a non-`true` value means disabled.
+- `Notifier::campaignCompleted()` resolves each recipient's `channels` before creating the alert. Disabled channels create no `notification_deliveries` rows at all, rather than `skipped` rows. The personal in-app alert is still recorded so the event remains in the account inbox and bell.
+- The endpoint is client-only: staff logins have no membership and receive `403`. Unknown keys (for example a forged `campaign_completed_push` or `notification_badge`) are ignored and cannot rewrite unrelated preferences; non-boolean values fail validation and return to the page with an error.
+- Saving records `identity.preferences_updated` in the audit log as the member's own action, using the same event key as the unread-badge toggle.
+- Subscription keys are declared once in `App\Services\Notifications\Preferences::SUBSCRIPTIONS`; adding a new opt-in event means adding an entry there and passing `channels` from `Preferences::channels()` at the notification call site.
 
 ## Configuration
 
@@ -64,7 +78,7 @@ The migration creates `user_notifications` and `notification_deliveries`. Run a 
 
 ## Validation and remaining acceptance
 
-`NotificationModuleTest` covers campaign review and completion audiences, per-user isolation, personal mark-through, category filtering, queued email delivery with `Mail::fake`, SMS provider delivery with `Http::fake`, missing-address skipping, low-credit deduplication and disabled notifications. `BroadcastReportExportTest` covers the CSV header, formula escaping, empty reports, download headers, authentication and tenant isolation. Module 10 audio, Module 12 rating, Modules 13–15 wallet/payment/finance and the campaign suites remain regression coverage.
+`NotificationModuleTest` covers campaign review and completion audiences, per-user isolation, personal mark-through, category filtering, queued email delivery with `Mail::fake`, SMS provider delivery with `Http::fake`, missing-address skipping, low-credit deduplication, disabled notifications and the campaign-completion opt-in: the default-off account receives only the in-app alert, enabling email and SMS from `/account/notifications` queues both copies for that login alone, the colleague keeps the default, unknown keys are ignored, the audit row is written, and a staff login posting the form receives `403`. `ClientAudioModuleTest` covers the reviewer alert audience on client upload, converted uploads, resubmission, uploader self-exclusion and the staff inbox render with an existing alert. `BroadcastReportExportTest` covers the CSV header, formula escaping, empty reports, download headers, authentication and tenant isolation. Module 10 audio, Module 12 rating, Modules 13–15 wallet/payment/finance and the campaign suites remain regression coverage.
 
-Remaining external/business acceptance: production email sender/domain verification, TxtConnect sender and message-length UAT, per-event notification preferences beyond the existing unread-badge toggle, retention policy for old alerts and delivery records, and monitoring for delivery failures. This release does not send to real recipients until those transports are configured and signed off.
+Remaining external/business acceptance: production email sender/domain verification, TxtConnect sender and message-length UAT, retention policy for old alerts and delivery records, and monitoring for delivery failures. This release does not send to real recipients until those transports are configured and signed off.
 

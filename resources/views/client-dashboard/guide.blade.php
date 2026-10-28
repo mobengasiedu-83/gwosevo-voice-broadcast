@@ -1,17 +1,62 @@
 @extends('dashboard.layout')
 @section('title','User guide')
 @section('content')
-<div class="contact-heading"><div><h1>Client user guide</h1><p>From your first contact list to your next successful campaign.</p></div></div>
+<div class="contact-heading">
+    <div>
+        <h1>Client user guide</h1>
+        <p>From your first contact list to your next successful campaign.</p>
+    </div>
+</div>
 <nav class="guide-contents" aria-label="Guide contents">
-@foreach(['quick-start'=>'Quick start','audience'=>'Your audience','recordings'=>'Recordings & IVR','campaigns'=>'Campaigns','results'=>'Results','credit'=>'Calling credit','account'=>'Your account'] as $id=>$label)<a href="#guide-{{ $id }}">{{ $label }}</a>@endforeach
+    @foreach(['quick-start'=>'Quick start','audience'=>'Your audience','recordings'=>'Recordings & IVR','campaigns'=>'Campaigns','results'=>'Results','credit'=>'Calling credit','account'=>'Your account'] as $id=>$label)<a href="#guide-{{ $id }}">{{ $label }}</a>@endforeach
 </nav>
-<section id="guide-quick-start"><h2>Your first campaign</h2><ol class="guide-steps"><li><strong>Prepare your audience.</strong> Create a contact group, add or import contacts, and record the permission you have to call them.</li><li><strong>Prepare your message.</strong> Upload a recording and wait for approval. Preview it before choosing it for a campaign.</li><li><strong>Check your calling credit.</strong> Your account needs an assigned rate and enough available credit for a full call hold when wallet billing applies.</li><li><strong>Create your campaign.</strong> Choose the group, recording and campaign type. Review your schedule and timezone.</li><li><strong>Start and monitor.</strong> Start a ready campaign, or arm its schedule. Follow progress in Live calls and review the campaign report.</li></ol><p>Your role determines which actions and menus are available. Ask your account administrator if you need access.</p></section>
+<section id="guide-quick-start">
+    <h2>Your first campaign</h2>
+    <ol class="guide-steps">
+        <li><strong>Prepare your audience.</strong> Create a contact group, add or import contacts, and record the permission you have to call them.</li>
+        <li><strong>Prepare your message.</strong> Upload a recording and wait for approval. Preview it before choosing it for a campaign.</li>
+        <li><strong>Check your calling credit.</strong> Your account needs an assigned rate and enough available credit for a full call hold when wallet billing applies.</li>
+        <li><strong>Create your campaign.</strong> Choose the group, recording and campaign type. Review your schedule and timezone.</li>
+        <li><strong>Start and monitor.</strong> Start a ready campaign, or arm its schedule. Follow progress in Live calls and review the campaign report.</li>
+    </ol>
+    <p>Your role determines which actions and menus are available. Ask your account administrator if you need access.</p>
+</section>
 <div class="client-dashboard-panels">
-<section id="guide-audience"><h2>Manage your audience</h2><p><strong>Contact directory</strong> stores your contacts. <strong>Contact groups</strong> organize them into audiences you can select for campaigns.</p><p><strong>Imports</strong> lets you upload a contact list. Follow the upload page's format and mapping instructions, then review the import results for rejected rows before using the group.</p><p><strong>Consent evidence</strong> records permission to contact someone. <strong>Suppression / DNC</strong> prevents calls to numbers that must not be called. Suppression is checked again before calling.</p>@can('contacts.view')<a href="{{ route('contacts.groups') }}">Open contact groups →</a>@endcan</section>
-<section id="guide-recordings"><h2>Recordings & interactive voice</h2><p>Upload your voice message in <strong>Recordings</strong>. Use the file requirements shown on that page, preview the audio and check its approval status. MP3, stereo WAV and other supported recordings are converted automatically before review. Processing, conversion-failed, pending or rejected recordings cannot be used to launch a campaign.</p><p><strong>Voice & IVR</strong> is for interactive calls, where listeners respond using keypad digits. Drag a component onto the visual canvas or click to add it, then select its card to choose a recording and destinations in the properties panel. Use Validate flow to review missing connections. Duplicate an existing version to create a new draft. Give each input an invalid-input and timeout destination, include an opt-out path when needed, and validate the flow before saving it. Approval and deployment may require an administrator.</p>@can('audio.manage')<a href="{{ route('audio.index') }}">Open recordings →</a>@endcan</section>
-<section id="guide-campaigns"><h2>Create, schedule & run</h2><p>In <strong>My campaigns</strong>, create a campaign with a clear name and purpose. Choose the contact group and an approved recording. For an interactive campaign, choose the appropriate IVR version.</p><p>Check the scheduled date, time and timezone. Leave the date blank to run when you click Start. For a future date, use <strong>Start schedule</strong> to arm the schedule. Saving a campaign alone does not start it.</p><p>Review the campaign status and any validation messages before starting. Your outgoing connection is assigned by GWO SEVO. Ask your administrator about approval or configuration issues.</p>@can('campaigns.view')<a href="{{ route('campaigns.index') }}">Open campaigns →</a>@endcan</section>
-<section id="guide-results"><h2>Understand your results</h2><p><strong>Dashboard</strong> summarizes your account. Select a date, timezone and campaign to review results. <strong>Live calls</strong> shows current calling activity.</p><p>An answered call means someone answered; it does not confirm the recording finished. <strong>Playback completed</strong> records confirmed completion. Calls awaiting confirmation need final evidence before you decide whether to retry.</p><p>Open a campaign's report for detailed outcomes. Your dashboard's call time card is an estimate of affordable whole billed minutes, rather than guaranteed talk time.</p>@can('reports.view')<a href="{{ route('campaigns.runs') }}">Open reports →</a>@endcan</section>
-<section id="guide-credit"><h2>Calling credit & top-ups</h2><p><strong>Available credit</strong> can fund new calls. <strong>Reserved credit</strong> is temporarily held for calls being processed. <strong>Calls in flight</strong> counts open call reservations. <strong>Paid from wallet</strong> shows settled spending.</p><p>Before a call starts, the system holds its maximum possible cost. After settlement, the actual charge is deducted and unused credit is released. Unanswered calls release their hold. Each answered call is billed in whole minutes, rounded up.</p><p>Once online payments are configured, enter a custom top-up amount on <strong>Top-ups & receipts</strong>. The minimum for a GHS wallet is <strong>GHS 10</strong>; the page displays the current maximum. Credit appears only after verified provider confirmation. Check the payment status before starting another payment.</p><p>If online payments are unavailable, contact Finance. For a billing dispute, include the payment receipt or call reference and explain what needs review.</p><a href="{{ route('wallet.index') }}">Open calling credit →</a></section>
-<section id="guide-account"><h2>Your account & help</h2><p>Expand <strong>Account</strong> in the sidebar for notifications, your profile, security and this guide. Opening a sidebar menu closes the others; the current page's menu opens automatically.</p><p>Review account notifications for updates. Keep your profile and verified sign-in details current. Use the theme control in the top bar to switch between light and dark mode.</p><p>If a screen shows an error, check the highlighted form fields and the message at the top. For access, account status or billing configuration issues, contact your account administrator or Finance with the campaign or receipt reference.</p><a href="{{ route('account.security') }}">Open security →</a></section>
+    <section id="guide-audience">
+        <h2>Manage your audience</h2>
+        <p><strong>Contact directory</strong> stores your contacts. <strong>Contact groups</strong> organize them into audiences you can select for campaigns.</p>
+        <p><strong>Imports</strong> lets you upload a contact list. Follow the upload page's format and mapping instructions, then review the import results for rejected rows before using the group.</p>
+        <p><strong>Consent evidence</strong> records permission to contact someone. <strong>Suppression / DNC</strong> prevents calls to numbers that must not be called. Suppression is checked again before calling.</p>@can('contacts.view')<a href="{{ route('contacts.groups') }}">Open contact groups →</a>@endcan
+    </section>
+    <section id="guide-recordings">
+        <h2>Recordings & interactive voice</h2>
+        <p>Upload your voice message in <strong>Recordings</strong>. Use the file requirements shown on that page, preview the audio and check its approval status. MP3, stereo WAV and other supported recordings are converted automatically before review. Processing, conversion-failed, pending or rejected recordings cannot be used to launch a campaign.</p>
+        <p><strong>Voice & IVR</strong> is for interactive calls, where listeners respond using keypad digits. Drag a component onto the visual canvas or click to add it, then select its card to choose a recording and destinations in the properties panel. Use Validate flow to review missing connections. Duplicate an existing version to create a new draft. Give each input an invalid-input and timeout destination, include an opt-out path when needed, and validate the flow before saving it. Approval and deployment may require an administrator.</p>@can('audio.manage')<a href="{{ route('audio.index') }}">Open recordings →</a>@endcan
+    </section>
+    <section id="guide-campaigns">
+        <h2>Create, schedule & run</h2>
+        <p>In <strong>My campaigns</strong>, create a campaign with a clear name and purpose. Choose the contact group and an approved recording. For an interactive campaign, choose the appropriate IVR version.</p>
+        <p>Check the scheduled date, time and timezone. Leave the date blank to run when you click Start. For a future date, use <strong>Start schedule</strong> to arm the schedule. Saving a campaign alone does not start it.</p>
+        <p>Review the campaign status and any validation messages before starting. Your outgoing connection is assigned by GWO SEVO. Ask your administrator about approval or configuration issues.</p>@can('campaigns.view')<a href="{{ route('campaigns.index') }}">Open campaigns →</a>@endcan
+    </section>
+    <section id="guide-results">
+        <h2>Understand your results</h2>
+        <p><strong>Dashboard</strong> summarizes your account. Select a date, timezone and campaign to review results. <strong>Live calls</strong> shows current calling activity.</p>
+        <p>An answered call means someone answered; it does not confirm the recording finished. <strong>Playback completed</strong> records confirmed completion. Calls awaiting confirmation need final evidence before you decide whether to retry.</p>
+        <p>Open a campaign's report for detailed outcomes. Your dashboard's call time card is an estimate of affordable whole billed minutes, rather than guaranteed talk time.</p>@can('reports.view')<a href="{{ route('campaigns.runs') }}">Open reports →</a>@endcan
+    </section>
+    <section id="guide-credit">
+        <h2>Calling credit & top-ups</h2>
+        <p><strong>Available credit</strong> can fund new calls. <strong>Reserved credit</strong> is temporarily held for calls being processed. <strong>Calls in flight</strong> counts open call reservations. <strong>Paid from wallet</strong> shows settled spending.</p>
+        <p>Before a call starts, the system holds the expected cost of that call: the recorded length for a one-way broadcast, or the maximum call length for an interactive campaign. After settlement, the actual charge is deducted and unused credit is released. Unanswered calls release their hold. Each answered call is billed in whole minutes, rounded up.</p>
+        <p>Once online payments are configured, enter a custom top-up amount on <strong>Top-ups & receipts</strong>. The minimum for a GHS wallet is <strong>GHS 10</strong>; the page displays the current maximum. Credit appears only after verified provider confirmation. Check the payment status before starting another payment.</p>
+        <p>If online payments are unavailable, contact Finance. For a billing dispute, include the payment receipt or call reference and explain what needs review.</p><a href="{{ route('wallet.index') }}">Open calling credit →</a>
+    </section>
+    <section id="guide-account">
+        <h2>Your account & help</h2>
+        <p>Expand <strong>Account</strong> in the sidebar for notifications, your profile, security and this guide. Opening a sidebar menu closes the others; the current page's menu opens automatically.</p>
+        <p>Review account notifications for updates. Keep your profile and verified sign-in details current. Use the theme control in the top bar to switch between light and dark mode.</p>
+        <p>If a screen shows an error, check the highlighted form fields and the message at the top. For access, account status or billing configuration issues, contact your account administrator or Finance with the campaign or receipt reference.</p><a href="{{ route('account.security') }}">Open security →</a>
+    </section>
 </div>
 @endsection

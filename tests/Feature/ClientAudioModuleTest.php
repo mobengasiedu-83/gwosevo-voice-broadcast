@@ -3,20 +3,27 @@
 namespace Tests\Feature;
 
 use App\Jobs\ConvertAudio;
+use App\Jobs\DeliverNotification;
+use App\Mail\AccountAlert;
 use App\Models\AudioFile;
 use App\Models\Campaign;
 use App\Models\Client;
 use App\Models\User;
+use App\Models\UserNotification;
 use App\Services\Broadcast\AudioConversion;
 use App\Services\Broadcast\AudioLibrary;
 use App\Services\Broadcast\Readiness;
 use App\Services\Clients\Accounts;
+use App\Services\Identity\Delivery as SmsDelivery;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class ClientAudioModuleTest extends TestCase
@@ -178,5 +185,103 @@ class ClientAudioModuleTest extends TestCase
         $this->actingAs($this->member)->get('/audio/'.$audio->id.'/preview')->assertOk();
         $this->post('/broadcast/audio/'.$audio->id.'/approve')->assertForbidden();
         $this->assertNull($audio->approved_by);
+    }
+
+    public function test_client_upload_emails_superadmin_administrator_and_approvers_for_review(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $administrator = User::factory()->create();
+        $administrator->assignRole('Administrator');
+        $approver = User::factory()->create();
+        $approver->assignRole('Approver');
+        $analyst = User::factory()->create();
+        $analyst->assignRole('Analyst');
+
+        $audio = $this->upload();
+
+        foreach ([$this->admin, $administrator, $approver] as $reviewer) {
+            $alert = UserNotification::where('user_id', $reviewer->id)->sole();
+            $this->assertSame('review', $alert->category);
+            $this->assertSame('audio.submitted', $alert->event_key);
+            $this->assertSame('warning', $alert->severity);
+            $this->assertSame('Recording awaiting approval', $alert->title);
+            $this->assertTrue($alert->in_app);
+            $this->assertStringContainsString('Customer message', (string) $alert->body);
+            $this->assertStringContainsString('Audio customer', (string) $alert->body);
+            $this->assertSame($audio->id, $alert->data['audio_id']);
+            $this->assertSame(route('audio.index', ['status' => 'pending']), $alert->url);
+            $delivery = $alert->deliveries()->sole();
+            $this->assertSame('email', $delivery->channel);
+            $this->assertSame('queued', $delivery->status);
+        }
+
+        // Client logins and staff roles that cannot approve audio stay silent.
+        $this->assertSame(0, UserNotification::whereIn('user_id', [$this->owner->id, $this->member->id, $analyst->id])->count());
+        $this->assertSame(3, UserNotification::where('event_key', 'audio.submitted')->count());
+
+        // The queued copy is a real email to each reviewer, not only an in-app badge.
+        $email = UserNotification::where('user_id', $this->admin->id)->sole()->deliveries()->sole();
+        (new DeliverNotification($email->id))->handle(app(SmsDelivery::class));
+        $this->assertSame('sent', $email->fresh()->status);
+        Mail::assertSent(AccountAlert::class, fn (AccountAlert $mail) => $mail->hasTo($this->admin->email)
+            && $mail->alertTitle === 'Recording awaiting approval');
+
+        // The alert is visible in the staff inbox, so approvals do not wait unseen.
+        $this->actingAs($approver)->get(route('notifications.index'))->assertOk()->assertSee('Recording awaiting approval');
+        $this->actingAs($approver)->get(route('audio.index', ['status' => 'pending']))->assertOk()->assertSee('Customer message');
+        $this->actingAs($this->member)->get('/account/notifications')->assertDontSee('Recording awaiting approval');
+    }
+
+    public function test_converted_client_upload_notifies_reviewers_only_once_it_is_reviewable(): void
+    {
+        Bus::fake([ConvertAudio::class]);
+        Mail::fake();
+        $approver = User::factory()->create();
+        $approver->assignRole('Approver');
+        $disk = Storage::disk('local');
+        $disk->makeDirectory('fixtures');
+        $path = $disk->path('fixtures/customer.mp3');
+        (new Process([config('voice_broadcast.ffmpeg'), '-nostdin', '-v', 'error', '-y', '-f', 'lavfi',
+            '-i', 'sine=frequency=440:duration=0.3', '-ac', '1', '-ar', '8000', '-c:a', 'libmp3lame', $path]))->mustRun();
+
+        $audio = app(AudioLibrary::class)->upload($this->owner, new UploadedFile($path, 'customer.mp3', null, null, true), 'Converted customer message');
+        $this->assertSame('processing', $audio->status);
+        $this->assertSame(0, UserNotification::where('event_key', 'audio.submitted')->count());
+
+        (new ConvertAudio($audio->id))->handle(app(AudioConversion::class));
+
+        $this->assertSame('pending', $audio->fresh()->status, $audio->fresh()->processing_error ?? '');
+        $this->assertSame(1, UserNotification::where('user_id', $this->admin->id)->where('event_key', 'audio.submitted')->count());
+        $this->assertSame(1, UserNotification::where('user_id', $approver->id)->where('event_key', 'audio.submitted')->count());
+        $this->assertSame(0, UserNotification::where('user_id', $this->owner->id)->where('event_key', 'audio.submitted')->count());
+    }
+
+    public function test_resubmission_after_rejection_alerts_reviewers_again(): void
+    {
+        Mail::fake();
+        $audio = $this->upload();
+        app(AudioLibrary::class)->reject($this->admin, $audio, 'Please re-record the intro');
+        $alerts = fn () => UserNotification::where('user_id', $this->admin->id)->where('event_key', 'audio.submitted')->count();
+        $this->assertSame(1, $alerts());
+
+        app(AudioLibrary::class)->resubmit($this->owner, $audio->fresh());
+
+        $this->assertSame(2, $alerts());
+        $latest = UserNotification::where('user_id', $this->admin->id)->where('event_key', 'audio.submitted')->latest('id')->first();
+        $this->assertStringContainsString('Customer message', (string) $latest->body);
+        $this->assertSame(1, UserNotification::where('user_id', $this->owner->id)->where('event_key', 'audio.rejected')->count());
+    }
+
+    public function test_a_reviewers_own_upload_does_not_alert_them(): void
+    {
+        Mail::fake();
+        $approver = User::factory()->create();
+        $approver->assignRole('Approver');
+
+        app(AudioLibrary::class)->upload($this->admin, $this->file(), 'Staff recording');
+
+        $this->assertSame(0, UserNotification::where('user_id', $this->admin->id)->where('event_key', 'audio.submitted')->count());
+        $this->assertSame(1, UserNotification::where('user_id', $approver->id)->where('event_key', 'audio.submitted')->count());
     }
 }

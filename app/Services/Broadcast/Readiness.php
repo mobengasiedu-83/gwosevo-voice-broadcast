@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\Contact;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
+use App\Services\Billing\Tariffs;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\Tenancy;
 use App\Services\Contacts\Suppression;
@@ -97,7 +98,7 @@ class Readiness
         }
 
         return [
-            'client_id' => $campaign->client_id, 'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
+            'client_id' => $campaign->client_id, 'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_duration_ms' => (int) ceil($audio->duration * 1000), 'reservation_tariff' => app(Tariffs::class)->snapshot($campaign->client_id), 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
             'trunk_name' => $trunk->name, 'caller_id' => $callerId, 'number_format' => $trunk->number_format,
             'concurrency' => (int) $c['concurrency'], 'cps' => (float) $c['cps'], 'timezone' => $policy['timezone'], 'scheduled_at' => $policy['scheduled_at'], 'priority' => $policy['priority'], 'ivr' => $ivr,
             'window_start' => $c['window_start'], 'window_end' => $c['window_end'], 'purpose' => $campaign->purpose,

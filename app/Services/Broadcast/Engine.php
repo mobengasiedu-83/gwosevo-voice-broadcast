@@ -3,6 +3,7 @@
 namespace App\Services\Broadcast;
 
 use App\Models\AudioFile;
+use App\Models\AuditLog;
 use App\Models\CallAttempt;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
@@ -17,6 +18,7 @@ use App\Services\Billing\WalletDeclined;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\Tenancy;
 use App\Services\Foundation;
+use App\Services\Notifications\Notifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -101,11 +103,18 @@ class Engine
                     $this->ready->fail('A complete campaign configuration is required before launch.');
                 }
                 $this->ready->liveAssets($s);
-                $eligible = collect($s['targets'])->contains(fn ($target) => $this->ready->exclusion($target['id'], $target['phone_e164'], $s['purpose']) === null);
-                if (! $eligible) {
+                $eligible = collect($s['targets'])->filter(fn ($target) => $this->ready->exclusion($target['id'], $target['phone_e164'], $s['purpose']) === null);
+                if ($eligible->isEmpty()) {
                     $this->ready->fail('No eligible contacts. Review DND/suppression and the frozen audience before launch.');
                 }
-                $credit = app(Wallet::class)->admission($campaign->client_id, app(Tariffs::class)->snapshot($campaign->client_id));
+                $credit = app(Wallet::class)->admission(
+                    $campaign->client_id,
+                    $s['reservation_tariff'] ?? app(Tariffs::class)->snapshot($campaign->client_id),
+                    // One-way campaigns hold the frozen recording length times the eligible
+                    // audience; 0 refuses an unmeasured recording instead of over-holding.
+                    $campaign->type === 'one_way' ? (int) ($s['audio_duration_ms'] ?? 0) : null,
+                    $campaign->type === 'one_way' ? $eligible->count() : 1,
+                );
                 if ($credit['applicable'] && ! $credit['allowed']) {
                     $this->ready->fail(Wallet::message($credit['reason']));
                 }
@@ -113,6 +122,7 @@ class Engine
                 foreach ($s['targets'] as $target) {
                     CampaignRecipient::firstOrCreate(['campaign_id' => $campaign->id, 'contact_id' => $target['id']], ['phone_e164' => $target['phone_e164'], 'status' => 'pending']);
                 }
+                app(Wallet::class)->reserveCampaign($campaign, $version, $actor);
                 $campaign->active_version_id = $version->id;
                 $campaign->scheduled_at = $s['scheduled_at'] ?? null;
                 $campaign->priority = $s['priority'] ?? 1;
@@ -137,6 +147,7 @@ class Engine
                 if (! in_array($campaign->status, ['running', 'paused', 'scheduled'], true)) {
                     $this->ready->fail('Campaign has no active broadcast run.');
                 }
+                app(Wallet::class)->releaseCampaignBudget($campaign->id, 'Campaign cancelled before sending');
                 $campaign->status = 'cancelled';
                 $campaign->stop_requested = true;
                 CampaignRecipient::where('campaign_id', $campaign->id)->where('status', 'pending')->update(['status' => 'cancelled']);
@@ -188,22 +199,27 @@ class Engine
             foreach (CampaignRecipient::where('campaign_id', $campaign->id)->where('status', 'pending')->where(fn ($q) => $q->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<=', now()))->orderBy('id')->limit(100)->get() as $recipient) {
                 $reason = $this->ready->exclusion($recipient->contact_id, $recipient->phone_e164, $s['purpose']);
                 if ($reason) {
+                    app(Wallet::class)->releaseCampaignBudget($campaign->id, 'Recipient excluded before sending: '.$reason, $recipient->id);
                     $recipient->update(['status' => 'excluded', 'exclusion_reason' => $reason]);
 
                     continue;
                 }
                 $uuid = (string) Str::uuid();
-                $attempt = CallAttempt::create(['tariff_snapshot' => app(Tariffs::class)->snapshot($campaign->client_id), 'uuid' => $uuid, 'action_id' => 'vb-'.$uuid, 'uniqueid' => $uuid, 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $campaign->active_version_id, 'trunk_profile_id' => $trunk->id, 'token' => bin2hex(random_bytes(32)), 'state' => 'authorizing', 'attempt_no' => (CallAttempt::where('campaign_recipient_id', $recipient->id)->max('attempt_no') ?? 0) + 1]);
+                $attempt = CallAttempt::create(['tariff_snapshot' => $s['reservation_tariff'] ?? app(Tariffs::class)->snapshot($campaign->client_id), 'uuid' => $uuid, 'action_id' => 'vb-'.$uuid, 'uniqueid' => $uuid, 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $campaign->active_version_id, 'trunk_profile_id' => $trunk->id, 'token' => bin2hex(random_bytes(32)), 'state' => 'authorizing', 'attempt_no' => (CallAttempt::where('campaign_recipient_id', $recipient->id)->max('attempt_no') ?? 0) + 1]);
                 try {
                     app(Wallet::class)->reserve($attempt);
                 } catch (WalletDeclined $declined) {
                     // Fail closed: no origination without a held reservation.
                     $attempt->update(['state' => 'terminal', 'outcome' => 'wallet_declined', 'ended_at' => now(), 'token' => null]);
                     $campaign->update(['status' => 'paused']);
-                    \App\Models\AuditLog::create([
-                        'client_id' => $campaign->client_id, 'actor_id' => null, 'action' => 'billing.wallet_declined',
-                        'entity_type' => $attempt->getMorphClass(), 'entity_id' => $attempt->id,
-                        'details' => ['reason' => $declined->reason] + $declined->context, 'created_at' => now(),
+                    AuditLog::create([
+                        'client_id' => $campaign->client_id,
+                        'actor_id' => null,
+                        'action' => 'billing.wallet_declined',
+                        'entity_type' => $attempt->getMorphClass(),
+                        'entity_id' => $attempt->id,
+                        'details' => ['reason' => $declined->reason] + $declined->context,
+                        'created_at' => now(),
                     ]);
 
                     return null;
@@ -223,9 +239,10 @@ class Engine
     public function complete(int $campaignId): void
     {
         if (! CampaignRecipient::where('campaign_id', $campaignId)->whereIn('status', ['pending', 'reserved', 'active', 'unknown'])->exists()) {
+            app(Wallet::class)->releaseCampaignBudget($campaignId, 'Campaign completed with unused recipient credit');
             $updated = Campaign::whereKey($campaignId)->where('status', 'running')->update(['status' => 'completed']);
             if ($updated) {
-                app(\App\Services\Notifications\Notifier::class)->campaignCompleted($campaignId);
+                app(Notifier::class)->campaignCompleted($campaignId);
             }
         }
     }

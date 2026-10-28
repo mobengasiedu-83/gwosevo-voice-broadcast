@@ -14,7 +14,7 @@
 </nav>
 <section>
 <h2>Alerts</h2>
-@forelse($alerts as $alert)
+@forelse($notificationPage as $alert)
 <article class="notice {{ $alert['severity'] }}">
 <h3>@if($alert['url'])<a href="{{ $alert['url'] }}">{{ $alert['title'] }}</a>@else{{ $alert['title'] }}@endif</h3>
 <p>{{ $alert['created_label'] }} · {{ $alert['unread'] ? 'Unread' : 'Read' }} · {{ ucfirst($alert['category']) }}</p>
@@ -30,7 +30,7 @@
 @empty
 <p>No account alerts in this category.</p>
 @endforelse
-{{ $alerts->links() }}
+{{ $notificationPage->links() }}
 </section>
 @if($deliveries->isNotEmpty())
 <section>

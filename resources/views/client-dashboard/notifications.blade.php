@@ -4,6 +4,20 @@
 <h1>Notifications</h1>
 <p>Personal account alerts and recording, campaign and import notices. Read status is personal to your login.</p>
 <section>
+<h2>Event notifications</h2>
+<p>Email and SMS copies are optional and switched off by default. Alerts always stay in your account inbox below.</p>
+<form method="post" action="{{ route('account.notifications.preferences') }}">@csrf
+@foreach($eventPreferences as $eventPreference)
+<input type="hidden" name="{{ $eventPreference['key'] }}" value="0">
+<label><input type="checkbox" name="{{ $eventPreference['key'] }}" value="1" @checked($eventPreference['enabled'])> {{ $eventPreference['label'] }}</label>
+@endforeach
+<button>Save event notifications</button>
+</form>
+@foreach(array_unique(array_column($eventPreferences, 'hint')) as $hint)
+<p>{{ $hint }}</p>
+@endforeach
+</section>
+<section>
 <h2>Account alerts</h2>
 @if($alertSummary['unread'] && $alertSummary['latest_id'])
 <form method="post" action="{{ route('account.notifications.alerts.read') }}">@csrf<input type="hidden" name="through_id" value="{{ $alertSummary['latest_id'] }}"><button>Mark alerts as read</button></form>

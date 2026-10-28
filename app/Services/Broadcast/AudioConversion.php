@@ -3,6 +3,8 @@
 namespace App\Services\Broadcast;
 
 use App\Models\AudioFile;
+use App\Models\User;
+use App\Services\Notifications\Notifier;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +23,7 @@ class AudioConversion
         if (! $audio || $audio->status !== 'processing') {
             return;
         }
+        $reviewable = null;
         $disk = Storage::disk('local');
         $work = 'broadcast/audio-work/'.$audio->uuid;
         $target = 'broadcast/audio/'.$audio->uuid.'.wav';
@@ -85,6 +88,8 @@ class AudioConversion
             ]);
             if (! $updated) {
                 $disk->delete($target);
+            } else {
+                $reviewable = $id;
             }
             $disk->delete($audio->source_key);
         } catch (Throwable $e) {
@@ -96,6 +101,11 @@ class AudioConversion
             $this->fail($id, $message);
         } finally {
             $disk->deleteDirectory($work);
+        }
+        // Alert reviewers only once the verified PCM WAV is in place; a failed
+        // alert must never turn a successful conversion into a failure.
+        if ($reviewable !== null && ($review = AudioFile::withoutGlobalScope('client')->find($reviewable))) {
+            app(Notifier::class)->audioSubmitted($review, User::find($review->uploaded_by));
         }
     }
 

@@ -1,12 +1,29 @@
 @extends('dashboard.layout')
 @section('title', ['overview'=>'Operations Overview','live'=>'Live Calls','wallboard'=>'Agent & Queue Wallboard','health'=>'System Health'][$tab])
 @section('content')
-<div class="page-heading"><div><div class="eyebrow">{{ ['overview'=>'THE BIG PICTURE','live'=>'CALL ACTIVITY','wallboard'=>'PEOPLE & CAPACITY','health'=>'INFRASTRUCTURE'][$tab] }}</div><h1>{{ ['overview'=>'Operations Overview','live'=>'Live Calls','wallboard'=>'Agent & Queue Wallboard','health'=>'System Health'][$tab] }}</h1><p>{{ ['overview'=>'A clear view of your campaigns, connections and outcomes.','live'=>'Follow broadcast attempts without losing sight of uncertain outcomes.','wallboard'=>'Authoritative queue membership and agent device states from your PBX.','health'=>'Freshness, capacity and the services that keep calls moving.'][$tab] }}</p></div><div class="heading-actions"><span class="refresh-status" id="refresh-status" role="status">Updated {{ now()->format('H:i:s') }} UTC</span><button class="button secondary" id="refresh-now" type="button">↻ <span>Refresh</span></button></div></div>
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">{{ ['overview'=>'THE BIG PICTURE','live'=>'CALL ACTIVITY','wallboard'=>'PEOPLE & CAPACITY','health'=>'INFRASTRUCTURE'][$tab] }}</div>
+        <h1>{{ ['overview'=>'Operations Overview','live'=>'Live Calls','wallboard'=>'Agent & Queue Wallboard','health'=>'System Health'][$tab] }}</h1>
+        <p>{{ ['overview'=>'A clear view of your campaigns, connections and outcomes.','live'=>'Follow broadcast attempts without losing sight of uncertain outcomes.','wallboard'=>'Authoritative queue membership and agent device states from your PBX.','health'=>'Freshness, capacity and the services that keep calls moving.'][$tab] }}</p>
+    </div>
+    <div class="heading-actions"><span class="refresh-status" id="refresh-status" role="status">Updated {{ now()->format('H:i:s') }} UTC</span><button class="button secondary" id="refresh-now" type="button">↻ <span>Refresh</span></button></div>
+</div>
 <form class="filters" method="get" aria-label="Dashboard filters">
-@if(in_array($tab,['overview','live']))<label>Campaign<select name="campaign_id"><option value="">All permitted campaigns</option>@foreach($campaign_options as $option)<option value="{{ $option->id }}" @selected(($filters['campaign_id'] ?? '')==$option->id)>{{ $option->name ?: 'Untitled campaign' }}</option>@endforeach</select></label>@endif
-@if($tab==='overview')<label>Date<input type="date" name="date" value="{{ $filters['date'] }}" required></label><label>Timezone<input name="timezone" value="{{ $filters['timezone'] }}" list="timezones" required><datalist id="timezones"><option>Africa/Accra</option><option>Africa/Nairobi</option><option>Europe/London</option><option>UTC</option></datalist></label>@endif
-@if($tab==='live')<label>State<select name="state"><option value="">All active & uncertain</option>@foreach(['authorizing','ready','sending','active','unknown'] as $state)<option @selected(($filters['state'] ?? '')===$state)>{{ $state }}</option>@endforeach</select></label><label>Search<input name="q" maxlength="80" value="{{ $filters['q'] ?? '' }}" placeholder="Campaign or call ID"></label>@endif
-@if($tab==='wallboard')<label>Queue<input name="queue" value="{{ $filters['queue'] ?? '' }}" placeholder="All queues" maxlength="80"></label>@endif
-@if($tab!=='health')<button class="button" type="submit">Apply filters</button><a class="reset-link" href="{{ route('dashboard.'.$tab) }}">Reset</a>@else<p class="subtle">Infrastructure checks are collected by the scheduler. Refreshing this page never places a call or opens an AMI connection.</p>@endif
-</form><div id="dashboard-panel" data-refresh-seconds="{{ config('dashboard.refresh_seconds') }}">@include('dashboard.panels.'.$tab)</div>
+    @if(in_array($tab,['overview','live']))<label>Campaign<select name="campaign_id">
+            <option value="">All permitted campaigns</option>@foreach($campaign_options as $option)<option value="{{ $option->id }}" @selected(($filters['campaign_id'] ?? '' )==$option->id)>{{ $option->name ?: 'Untitled campaign' }}</option>@endforeach
+        </select></label>@endif
+    @if($tab==='overview')<label>Date<input type="date" name="date" value="{{ $filters['date'] }}" required></label><label>Timezone<input name="timezone" value="{{ $filters['timezone'] }}" list="timezones" required><datalist id="timezones">
+            <option>Africa/Accra</option>
+            <option>Africa/Nairobi</option>
+            <option>Europe/London</option>
+            <option>UTC</option>
+        </datalist></label>@endif
+    @if($tab==='live')<label>State<select name="state">
+            <option value="">All active & uncertain</option>@foreach(['authorizing','ready','sending','active','unknown'] as $state)<option @selected(($filters['state'] ?? '' )===$state)>{{ $state }}</option>@endforeach
+        </select></label><label>Search<input name="q" maxlength="80" value="{{ $filters['q'] ?? '' }}" placeholder="Campaign or call ID"></label>@endif
+    @if($tab==='wallboard')<label>Queue<input name="queue" value="{{ $filters['queue'] ?? '' }}" placeholder="All queues" maxlength="80"></label>@endif
+    @if($tab!=='health')<button class="button" type="submit">Apply filters</button><a class="button secondary" href="{{ route('dashboard.'.$tab) }}" aria-label="Reset filters">Reset</a>@else<p class="subtle">Infrastructure checks are collected by the scheduler. Refreshing this page never places a call or opens an AMI connection.</p>@endif
+</form>
+<div id="dashboard-panel" data-refresh-seconds="{{ config('dashboard.refresh_seconds') }}">@include('dashboard.panels.'.$tab)</div>
 @endsection

@@ -13,10 +13,11 @@ class NotificationController extends Controller
         $user = $request->user();
 
         return response()->view('notifications.index', [
-            'alerts' => $center->page($user, $filter['category'] ?? null),
+            'notificationPage' => $center->page($user, $filter['category'] ?? null),
             'summary' => $center->summary($user),
             'deliveries' => $center->deliveryPage($user),
             'category' => $filter['category'] ?? null,
+            'alerts' => [],
             'tab' => 'overview',
         ])->header('Cache-Control', 'private, no-store');
     }

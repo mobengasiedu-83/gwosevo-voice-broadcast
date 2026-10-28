@@ -211,6 +211,97 @@ class NotificationModuleTest extends TestCase
         $this->assertDatabaseHas('user_notifications', ['user_id' => $this->owner->id, 'event_key' => 'campaign.completed']);
         $this->assertDatabaseMissing('user_notifications', ['user_id' => $this->colleague->id, 'event_key' => 'campaign.completed']);
         $this->assertSame(2, UserNotification::where('event_key', 'campaign.completed')->count());
+
+        // Email and SMS copies are opt-in, so a fresh account only gets the inbox alert.
+        $alert = UserNotification::where('user_id', $this->member->id)->where('event_key', 'campaign.completed')->sole();
+        $this->assertTrue($alert->in_app);
+        $this->assertSame(0, $alert->deliveries()->count());
+        $this->assertSame(0, UserNotification::where('user_id', $this->owner->id)
+            ->where('event_key', 'campaign.completed')->sole()->deliveries()->count());
+
+        $this->actingAs($this->member)->get(route('account.notifications'))
+            ->assertOk()
+            ->assertSee('Event notifications')
+            ->assertSee('Campaign finished — Email copy')
+            ->assertSee('Campaign finished — SMS copy')
+            ->assertDontSee('name="campaign_completed_email" value="1" checked', false);
+    }
+
+    public function test_client_can_enable_campaign_completion_email_and_sms_for_their_own_login(): void
+    {
+        $this->member->forceFill(['phone_e164' => '+233241000222'])->save();
+
+        $this->actingAs($this->member)->post(route('account.notifications.preferences'), [
+            'campaign_completed_email' => 1,
+            'campaign_completed_sms' => 1,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $preferences = $this->member->fresh()->portal_preferences;
+        $this->assertTrue($preferences['campaign_completed_email']);
+        $this->assertTrue($preferences['campaign_completed_sms']);
+        $this->assertArrayNotHasKey('notification_badge', $preferences);
+        $this->assertDatabaseHas('audit_logs', ['actor_id' => $this->member->id, 'action' => 'identity.preferences_updated']);
+
+        // The authenticated guard caches the model in-process; reload the saved
+        // preferences the way the next real request would.
+        $this->member->refresh();
+        $this->actingAs($this->member)->get(route('account.notifications'))
+            ->assertOk()
+            ->assertSee('name="campaign_completed_email" value="1" checked', false)
+            ->assertSee('name="campaign_completed_sms" value="1" checked', false);
+
+        $campaign = $this->campaign('running');
+        app(Engine::class)->complete($campaign->id);
+
+        $alert = UserNotification::where('user_id', $this->member->id)->where('event_key', 'campaign.completed')->sole();
+        $email = $alert->deliveries()->where('channel', 'email')->sole();
+        $this->assertSame('queued', $email->status);
+        $this->assertSame('queued', $alert->deliveries()->where('channel', 'sms')->sole()->status);
+        (new DeliverNotification($email->id))->handle(app(SmsDelivery::class));
+        Mail::assertSent(AccountAlert::class, fn (AccountAlert $mail) => $mail->hasTo($this->member->email)
+            && $mail->alertTitle === 'Campaign completed');
+
+        // A colleague's login keeps its own defaults: inbox alert, no copies.
+        $ownerAlert = UserNotification::where('user_id', $this->owner->id)->where('event_key', 'campaign.completed')->sole();
+        $this->assertSame(0, $ownerAlert->deliveries()->count());
+    }
+
+    public function test_event_notification_preferences_are_client_scoped_and_ignore_unknown_keys(): void
+    {
+        $this->actingAs($this->member)->post(route('account.notifications.preferences'), [
+            'campaign_completed_email' => 1,
+            'notification_badge' => 1,
+            'campaign_completed_push' => 1,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $preferences = $this->member->fresh()->portal_preferences;
+        $this->assertTrue($preferences['campaign_completed_email']);
+        // An absent toggle falls back to the disabled default instead of sticking.
+        $this->assertFalse($preferences['campaign_completed_sms']);
+        $this->assertArrayNotHasKey('campaign_completed_push', $preferences);
+        // The event form never rewrites the unread-badge display preference.
+        $this->assertArrayNotHasKey('notification_badge', $preferences);
+
+        $campaign = $this->campaign('running');
+        app(Engine::class)->complete($campaign->id);
+        $alert = UserNotification::where('user_id', $this->member->id)->where('event_key', 'campaign.completed')->sole();
+        $this->assertSame('queued', $alert->deliveries()->where('channel', 'email')->sole()->status);
+        $this->assertSame(0, $alert->deliveries()->where('channel', 'sms')->count());
+
+        $this->actingAs($this->member)->post(route('account.notifications.preferences'), [
+            'campaign_completed_email' => 0,
+            'campaign_completed_sms' => 0,
+        ])->assertRedirect();
+        $this->assertFalse($this->member->fresh()->portal_preferences['campaign_completed_email']);
+
+        // Staff logins have no client membership and cannot change client preferences.
+        $this->actingAs($this->admin)->post(route('account.notifications.preferences'), [
+            'campaign_completed_email' => 1,
+        ])->assertForbidden();
+        $this->assertFalse($this->member->fresh()->portal_preferences['campaign_completed_email']);
+
+        $this->actingAs($this->member)->post(route('account.notifications.preferences'), ['campaign_completed_email' => 'yes'])
+            ->assertSessionHasErrors('campaign_completed_email');
     }
 
     public function test_notification_creation_is_user_scoped_and_disabled_globally_when_requested(): void

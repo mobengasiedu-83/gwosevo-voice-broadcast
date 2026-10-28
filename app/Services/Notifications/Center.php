@@ -86,6 +86,19 @@ class Center
             ->get();
     }
 
+    /**
+     * Staff reviewers who may approve audio: super administrators,
+     * administrators and approvers. Client logins never receive these alerts.
+     */
+    public function audioApprovers(): iterable
+    {
+        return User::whereDoesntHave('clientMembership')
+            ->orderBy('id')
+            ->get()
+            ->filter(fn (User $user) => $user->can('audio.approve'))
+            ->values();
+    }
+
     /** The member who uploaded or initiated the event, only while still active. */
     public function activeMember(int $clientId, ?int $userId): ?User
     {

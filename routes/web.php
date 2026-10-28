@@ -460,6 +460,7 @@ Route::middleware('auth')->prefix('account')->name('account.')->group(function (
     Route::post('/preferences', [$account, 'preferences'])->name('preferences');
     Route::post('/security', [$account, 'security'])->middleware(['throttle:5,1', VerifyTurnstile::class.':identity'])->name('security.save');
     Route::get('/notifications', [ClientNoticeController::class, 'index'])->name('notifications');
+    Route::post('/notifications/preferences', [ClientNoticeController::class, 'preferences'])->name('notifications.preferences');
     Route::post('/notifications/read', [ClientNoticeController::class, 'read'])->name('notifications.read');
     Route::post('/notifications/alerts/read', [ClientNoticeController::class, 'readAlerts'])->name('notifications.alerts.read');
 });

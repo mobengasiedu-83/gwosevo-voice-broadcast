@@ -14,10 +14,10 @@ use App\Services\Contacts\Suppression;
 /**
  * Read-only forecast of what one attempt to every eligible recipient would cost.
  *
- * The forecast is advisory. Wallet admission at dispatch remains authoritative:
- * credit is held per call for config('billing.max_call_seconds'), and calls that
- * are never answered are released without a charge. Retries therefore do not
- * add credit above one attempt per recipient; they only delay the run.
+ * One-way campaign launch reserves this cost across the eligible audience.
+ * Dispatch consumes those holds without reserving twice. Unanswered calls release
+ * their holds; retries reserve another recording-cost hold when actually dispatched.
+ * Interactive calls retain the configured maximum-duration exposure.
  *
  * Consent evidence is recorded but is not a dialing gate (see
  * docs/campaign-audio-workflow.md); DND/suppression and deleted contacts are.
@@ -120,9 +120,15 @@ class CampaignEstimate
             'messages' => [],
         ];
 
-        $admission = app(Wallet::class)->admission($clientId, $tariff);
+        $oneWay = ($input['type'] ?? 'one_way') === 'one_way';
+        // A selected recording with no measured length refuses admission (0) rather
+        // than quoting the maximum-call exposure; no recording defers to the
+        // audio_missing explanation instead of claiming a credit refusal.
+        $durationMs = $oneWay && $audio !== null ? (int) ceil(((float) $duration) * 1000) : null;
+        $admission = app(Wallet::class)->admission($clientId, $tariff, $durationMs, $oneWay ? $eligible : 1);
         $estimate['can_start_call'] = $admission['allowed'];
-        $estimate['call_hold_minor'] = $admission['exposure_minor'];
+        $estimate['call_hold_minor'] = $oneWay ? $perCall : $admission['exposure_minor'];
+        $estimate['campaign_hold_minor'] = $oneWay ? $total : null;
         $estimate['admission_reason'] = $admission['reason'];
 
         $estimate['messages'] = $this->messages($estimate, $reason, $input);
@@ -240,9 +246,21 @@ class CampaignEstimate
         }
 
         if ($estimate['billing_applicable'] && ! $estimate['can_start_call']) {
-            $messages[] = ['tone' => 'warning', 'text' => 'New calls cannot start: '.Wallet::clientMessage($estimate['admission_reason'])];
+            $oneWay = ($input['type'] ?? 'one_way') === 'one_way';
+            $messages[] = ['tone' => 'warning', 'text' => 'New calls cannot start: '
+                .($oneWay && $estimate['admission_reason'] === 'insufficient_credit' && $estimate['campaign_hold_minor'] !== null
+                    ? 'available credit is below the '.self::money($estimate['campaign_hold_minor'], $estimate['minor_unit_scale']).' '
+                    .$estimate['currency'].' recording cost for the eligible audience.'
+                    : Wallet::clientMessage((string) $estimate['admission_reason']))];
         } elseif ($estimate['billing_applicable'] && $estimate['call_hold_minor'] > 0) {
-            $messages[] = ['tone' => 'info', 'text' => 'Each new call temporarily requires '.self::money($estimate['call_hold_minor'], $estimate['minor_unit_scale']).' '.$estimate['currency'].' for its maximum call hold, even if the recording costs less.'];
+            $oneWay = ($input['type'] ?? 'one_way') === 'one_way';
+            $messages[] = ['tone' => 'info', 'text' => $oneWay
+                ? 'Each call holds only '.self::money($estimate['call_hold_minor'], $estimate['minor_unit_scale']).' '.$estimate['currency']
+                .' for its '.number_format((int) $estimate['minutes_per_call']).'-minute recording. The full '
+                .self::money($estimate['campaign_hold_minor'], $estimate['minor_unit_scale']).' '.$estimate['currency']
+                .' is reserved across the eligible audience when the campaign starts.'
+                : 'Each new call temporarily requires '.self::money($estimate['call_hold_minor'], $estimate['minor_unit_scale']).' '.$estimate['currency']
+                .' for its maximum call hold, even if the recording costs less.'];
         }
 
         return $messages;

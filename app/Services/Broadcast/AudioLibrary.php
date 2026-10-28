@@ -70,8 +70,14 @@ class AudioLibrary
                 app(AudioConversion::class)->fail($audio->id, 'Audio processing could not be queued. Please upload the recording again.');
             }
         }
+        $audio = $audio->refresh();
+        // WAV uploads are reviewable immediately; converted sources alert from
+        // AudioConversion once the verified PCM file exists.
+        if ($audio->status === 'pending') {
+            app(Notifier::class)->audioSubmitted($audio, $actor);
+        }
 
-        return $audio->refresh();
+        return $audio;
     }
 
     public function approve(User $actor, AudioFile $audio): void
@@ -131,6 +137,8 @@ class AudioLibrary
             $audio->update(['status' => 'pending', 'rejected_by' => null, 'rejected_at' => null, 'rejection_reason' => null]);
             app(Foundation::class)->audit($actor, 'audio.resubmitted', $audio);
         });
+        // A resubmission is a fresh review request, so reviewers are alerted again.
+        app(Notifier::class)->audioSubmitted($audio->refresh(), $actor);
     }
 
     public function deployed(User $actor, AudioFile $audio, string $checksum, string $evidence): void
