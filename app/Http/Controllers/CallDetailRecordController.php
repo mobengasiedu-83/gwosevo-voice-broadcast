@@ -13,6 +13,9 @@ class CallDetailRecordController extends Controller
     public function index(Request $request)
     {
         Gate::authorize('reports.view');
+        // Carrier expense is an internal cost. Client accounts can review their
+        // own charges but never the carrier's billed minutes or cost.
+        $showCarrierCost = $request->user()->can('billing.manage');
         $filters = $request->validate([
             'msisdn' => 'nullable|string|max:32|regex:/\A[+0-9]+\z/',
             'from' => 'nullable|date_format:Y-m-d',
@@ -20,19 +23,26 @@ class CallDetailRecordController extends Controller
             'campaign_id' => 'nullable|integer|min:1', 'answered' => 'nullable|in:0,1',
         ]);
         // The attempt's global account scope applies to the page AND the export.
-        $query = CallAttempt::with(['recipient', 'rating', 'reservation', 'approvedVersion', 'telecomUsage'])
+        $query = CallAttempt::with(array_merge(
+            ['recipient', 'rating', 'reservation', 'approvedVersion'],
+            $showCarrierCost ? ['telecomUsage'] : [],
+        ))
             ->when($filters['msisdn'] ?? null, fn ($q, $number) => $q->whereHas('recipient', fn ($r) => $r->where('phone_e164', $number)))
             ->when($filters['campaign_id'] ?? null, fn ($q, $id) => $q->whereHas('recipient', fn ($r) => $r->where('campaign_id', $id)))
             ->when($filters['from'] ?? null, fn ($q, $date) => $q->where('sent_at', '>=', $date.' 00:00:00'))
             ->when($filters['to'] ?? null, fn ($q, $date) => $q->where('sent_at', '<', CarbonImmutable::parse($date)->addDay()))
             ->when(isset($filters['answered']), fn ($q) => $filters['answered'] === '1' ? $q->whereNotNull('answered_at') : $q->whereNull('answered_at'));
         if ($request->routeIs('cdr.export')) {
-            return response()->streamDownload(function () use ($query) {
+            return response()->streamDownload(function () use ($query, $showCarrierCost) {
                 $out = fopen('php://output', 'w');
-                fputcsv($out, ['attempt_id', 'attempt_uuid', 'campaign_id', 'msisdn', 'state', 'outcome',
+                $header = ['attempt_id', 'attempt_uuid', 'campaign_id', 'msisdn', 'state', 'outcome',
                     'sent_at_utc', 'answered_at_utc', 'ended_at_utc', 'time_spent_ms', 'time_spent_seconds',
-                    'recording_duration_ms', 'billing_basis', 'billable_minutes', 'charge', 'paid', 'shortfall', 'currency', 'billing_status', 'telecom_duration_ms', 'telecom_billed_duration_ms', 'telecom_billed_minutes', 'telecom_cost', 'telecom_currency'], ',', '"', '');
-                $query->orderBy('id')->chunkById(500, function ($attempts) use ($out) {
+                    'recording_duration_ms', 'billing_basis', 'billable_minutes', 'charge', 'paid', 'shortfall', 'currency', 'billing_status'];
+                if ($showCarrierCost) {
+                    array_push($header, 'telecom_duration_ms', 'telecom_billed_duration_ms', 'telecom_billed_minutes', 'telecom_cost', 'telecom_currency');
+                }
+                fputcsv($out, $header, ',', '"', '');
+                $query->orderBy('id')->chunkById(500, function ($attempts) use ($out, $showCarrierCost) {
                     foreach ($attempts as $a) {
                         $r = $a->reservation;
                         $scale = $a->rating?->minor_unit_scale ?? $a->tariff_snapshot['minor_unit_scale'] ?? 2;
@@ -46,10 +56,12 @@ class CallDetailRecordController extends Controller
                             $a->rating?->billable_minutes ?? ($a->answered_at ? $a->recordingMinutes() : 0), Wallet::amount($charge, $scale),
                             Wallet::amount($paid, $scale), Wallet::amount(max(0, $charge - $paid), $scale),
                             $a->rating?->currency ?? $a->tariff_snapshot['currency'] ?? '',
-                            $r?->state === 'settled' ? 'settled' : ($a->answered_at ? ($paid > 0 ? 'answer charged / pending settlement' : 'unpaid / pending settlement') : ($r?->state ?? 'unbilled')),
-                            $a->telecomUsage?->duration_ms, $a->telecomUsage?->billed_duration_ms, $a->telecomUsage?->billed_minutes,
-                            $a->telecomUsage?->cost_minor === null ? '' : Wallet::amount($a->telecomUsage->cost_minor, $a->telecomUsage->minor_unit_scale),
-                            $a->telecomUsage?->currency];
+                            $r?->state === 'settled' ? 'settled' : ($a->answered_at ? ($paid > 0 ? 'answer charged / pending settlement' : 'unpaid / pending settlement') : ($r?->state ?? 'unbilled'))];
+                        if ($showCarrierCost) {
+                            array_push($row, $a->telecomUsage?->duration_ms, $a->telecomUsage?->billed_duration_ms, $a->telecomUsage?->billed_minutes,
+                                $a->telecomUsage?->cost_minor === null ? '' : Wallet::amount($a->telecomUsage->cost_minor, $a->telecomUsage->minor_unit_scale),
+                                $a->telecomUsage?->currency);
+                        }
                         fputcsv($out, array_map(fn ($v) => preg_match('/\A[=+\-@]/', (string) $v) ? "'".$v : $v, $row), ',', '"', '');
                     }
                 });
@@ -57,7 +69,7 @@ class CallDetailRecordController extends Controller
             }, 'call-detail-records-'.now()->utc()->format('Ymd-His').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store']);
         }
 
-        return response()->view('broadcast.cdr', ['attempts' => $query->orderByDesc('id')->paginate(50)->withQueryString(), 'filters' => $filters])
+        return response()->view('broadcast.cdr', ['attempts' => $query->orderByDesc('id')->paginate(50)->withQueryString(), 'filters' => $filters, 'showCarrierCost' => $showCarrierCost])
             ->header('Cache-Control', 'private, no-store');
     }
 }

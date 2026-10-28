@@ -291,7 +291,10 @@ class WalletModuleTest extends TestCase
         $foreignCampaign = Campaign::create(['client_id' => $other->id, 'owner_id' => $this->admin->id, 'name' => 'Foreign CDR campaign', 'purpose' => 'Updates', 'type' => 'one_way', 'status' => 'running']);
         $foreignRecipient = CampaignRecipient::create(['campaign_id' => $foreignCampaign->id, 'status' => 'terminal', 'phone_e164' => '+233209999999']);
         CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $foreignRecipient->id, 'attempt_no' => 1, 'state' => 'terminal', 'sent_at' => now(), 'ended_at' => now(), 'outcome' => 'busy']);
-        $this->actingAs($this->member)->get('/reports/cdr')->assertOk()->assertSee('+233241234567')->assertSee('60.001 s')->assertDontSee('+233209999999');
+        $this->actingAs($this->member)->get('/reports/cdr')->assertOk()->assertSee('+233241234567')->assertSee('60.001 s')
+            ->assertSee('Recording length')->assertDontSee('+233209999999')
+            // Carrier cost is an internal expense and must never reach a client.
+            ->assertDontSee('Carrier billed minutes')->assertDontSee('Carrier cost');
         $this->get('/reports/cdr?to=2026-10-26')->assertOk()->assertSee('+233241234567');
         $this->get('/reports/cdr?answered=0')->assertOk()->assertDontSee('+233241234567');
         $csv = $this->get('/reports/cdr.csv')->assertOk()->streamedContent();
@@ -301,7 +304,24 @@ class WalletModuleTest extends TestCase
         $this->assertStringContainsString('+233241234567', $csv);
         $this->assertStringContainsString('60001', $csv);
         $this->assertStringNotContainsString('+233209999999', $csv);
+        $this->assertStringNotContainsString('telecom_billed_minutes', $csv);
+        $this->assertStringNotContainsString('telecom_cost', $csv);
         $this->get('/reports/cdr?campaign_id='.$foreignCampaign->id)->assertOk()->assertDontSee('+233209999999')->assertDontSee('+233241234567');
+    }
+
+    public function test_staff_cdr_shows_the_separate_carrier_expense(): void
+    {
+        config()->set('telecom', ['rate_per_minute' => '0.07', 'currency' => 'GHS', 'minor_unit_scale' => 2]);
+        [$attempt] = $this->attempt(60000, recordingMs: 75000);
+        $attempt->recipient->update(['phone_e164' => '+233241234567']);
+        app(TelecomUsage::class)->record($attempt);
+
+        $this->actingAs($this->admin)->get('/reports/cdr')->assertOk()
+            ->assertSee('Carrier billed minutes')->assertSee('Carrier cost')->assertSee('GHS 0.07');
+        $csv = $this->get('/reports/cdr.csv')->assertOk()->streamedContent();
+        $this->assertStringContainsString('telecom_billed_minutes', $csv);
+        $this->assertStringContainsString('telecom_cost', $csv);
+        $this->assertStringContainsString('0.07', $csv);
     }
 
     public function test_client_reservation_requires_a_wallet_even_for_existing_attempts(): void
