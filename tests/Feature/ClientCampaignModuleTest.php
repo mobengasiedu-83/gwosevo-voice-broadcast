@@ -97,6 +97,45 @@ class ClientCampaignModuleTest extends TestCase
         return app(Workspace::class)->save($this->owner, null, $this->data($overrides));
     }
 
+    public function test_launch_freezes_audio_price_contact_count_and_tariff_for_all_recipients(): void
+    {
+        $this->audio->update(['duration' => 75]);
+        $tariffs = app(Tariffs::class);
+        $plan = $tariffs->create($this->admin, ['code' => 'snapshot-20', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2, 'rate_minor_per_minute' => 20, 'playback_policy' => 'charge_answered'], 'Snapshot fixture');
+        $tariffs->assign($this->admin, $this->client, $plan, 'Snapshot fixture');
+        $contact = app(Tenancy::class)->run($this->client->id, fn () => app(Foundation::class)->createContact($this->owner, ['name' => 'Second', 'phone' => '0241234599', 'source' => 'Form']));
+        $this->group->contacts()->attach($contact);
+        $campaign = $this->campaign();
+        $engine = app(Engine::class);
+        $engine->control($this->owner, $campaign, 'start');
+        $run = CampaignRun::where('campaign_id', $campaign->id)->firstOrFail();
+        $pricing = $run->snapshot['broadcast']['billing'];
+        $this->assertSame($this->audio->id, $pricing['audio_id']);
+        $this->assertEquals(75, $pricing['audio_duration_seconds']);
+        $this->assertSame(2, $pricing['billable_minutes']);
+        $this->assertSame(20, $pricing['rate_minor_per_minute']);
+        $this->assertSame(40, $pricing['rate_per_contact_minor']);
+        $this->assertSame(2, $pricing['contact_count']);
+        $this->assertSame(80, $pricing['estimated_campaign_amount_minor']);
+        $this->assertSame('GHS', $pricing['currency']);
+        $this->assertSame($plan->id, $pricing['rate_plan_id']);
+        $new = $tariffs->create($this->admin, ['code' => 'snapshot-90', 'version' => 1, 'currency' => 'GHS', 'minor_unit_scale' => 2, 'rate_minor_per_minute' => 90, 'playback_policy' => 'charge_answered'], 'Changed future rate');
+        $tariffs->assign($this->admin, $this->client, $new, 'Future campaigns only');
+        $this->assertSame($pricing, $run->fresh()->snapshot['broadcast']['billing']);
+        $this->actingAs($this->owner)->get(route('campaigns.show', $campaign))->assertOk()->assertSee('Saved campaign pricing')->assertSee('GHS 0.40');
+        config()->set('voice_broadcast.enabled', true);
+        config()->set('voice_broadcast.global_channels', 3);
+        config()->set('voice_broadcast.global_cps', 1);
+        $gateway = (string) Str::uuid();
+        DB::table('broadcast_gateway')->where('id', 1)->update(['owner' => $gateway, 'healthy' => true, 'snapshot_at' => now(), 'heartbeat_at' => now(), 'channels' => '[]', 'emergency_stop' => false]);
+        $attempt = DB::transaction(fn () => $engine->reserve($gateway));
+        $this->assertNotNull($attempt);
+        $this->assertSame(20, $attempt->tariff_snapshot['rate_minor_per_minute']);
+        $this->assertSame(75000, $attempt->recordingDurationMs());
+        $amounts = WalletReservation::where('campaign_version_id', $run->campaign_version_id)->pluck('amount_minor')->all();
+        $this->assertSame([40, 40], $amounts);
+    }
+
     public function test_colleague_can_save_shared_group_and_operate_scheduled_frozen_execution(): void
     {
         $this->actingAs($this->member)->get('/campaigns/create')->assertOk()->assertSee('Colleague audience')->assertDontSee('name="caller_id"', false)->assertDontSee('preview or approve audio');

@@ -13,6 +13,7 @@ use App\Models\TrunkProfile;
 use App\Models\User;
 use App\Services\Billing\Rating;
 use App\Services\Billing\Tariffs;
+use App\Services\Billing\TelecomUsage;
 use App\Services\Billing\Wallet;
 use App\Services\Billing\WalletDeclined;
 use App\Services\Campaigns\Workspace;
@@ -247,16 +248,21 @@ class Engine
         }
     }
 
-    public function terminal(CallAttempt $attempt, string $outcome): void
+    public function terminal(CallAttempt $attempt, string $outcome, ?CarbonImmutable $endedAt = null): void
     {
         if ($attempt->ended_at) {
             return;
         }
         $unsent = ! $attempt->sent_at && in_array($attempt->state, ['authorizing', 'ready'], true);
-        $attempt->update(['state' => 'terminal', 'outcome' => $outcome, 'ended_at' => now()]);
+        $attempt->update(['state' => 'terminal', 'outcome' => $outcome, 'ended_at' => $endedAt ?? now()]);
+        app(TelecomUsage::class)->record($attempt);
         $answered = $attempt->answered_at || $attempt->playback_started_at || $attempt->playback_completed_at || $attempt->ivr_completed_at || $attempt->opted_out_at || $attempt->transfer_answered_at;
         if ($attempt->sent_at) {
-            app(Rating::class)->issue($attempt, 'timing_required');
+            if ($attempt->answered_at) {
+                app(Rating::class)->internal($attempt);
+            } else {
+                app(Rating::class)->issue($attempt, 'timing_required');
+            }
             if (! $answered && in_array($outcome, self::UNANSWERED_OUTCOMES, true)) {
                 // Definitive no-answer/busy/failed: release the hold, post zero usage.
                 app(Wallet::class)->release($attempt, 'Call ended without an answer: '.$outcome);

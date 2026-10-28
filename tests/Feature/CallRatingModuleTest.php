@@ -115,7 +115,7 @@ class CallRatingModuleTest extends TestCase
         $a->rating->update(['amount_minor' => 0]);
     }
 
-    public function test_integer_seconds_missing_tariff_and_playback_policy_hold_without_a_charge(): void
+    public function test_import_precision_and_missing_tariff_are_checked_but_playback_never_blocks_billing(): void
     {
         [$a, $proof] = $this->attempt(60400);
         $seconds = $proof;
@@ -132,9 +132,8 @@ class CallRatingModuleTest extends TestCase
         app(Tariffs::class)->assign($this->admin, $this->client, $hold, 'Hold incomplete playback');
         [$silent, $proof] = $this->attempt();
         $silent->update(['playback_completed_at' => null, 'outcome' => 'playback_failed']);
-        $this->assertSame('held', app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'private/silent'));
-        $this->assertNull($silent->rating);
-        $this->assertDatabaseHas('billing_exceptions', ['call_attempt_id' => $silent->id, 'issue' => 'playback_policy']);
+        $this->assertSame('rated', app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'private/silent'));
+        $this->assertSame(60, $silent->rating->amount_minor);
     }
 
     public function test_microseconds_are_not_truncated_at_a_minute_boundary_and_conflicts_never_rewrite(): void

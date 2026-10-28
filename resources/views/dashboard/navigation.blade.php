@@ -15,6 +15,7 @@
             ['Campaigns', 'campaigns.index', ['campaigns.view'], request()->routeIs('campaigns.*') && !$schedulingPage && !$reportsPage],
             ['Scheduling', 'campaigns.index', ['campaigns.view'], $schedulingPage, ['view' => 'scheduled']],
             ['Dialing Operations', 'broadcast.index', ['broadcast.operate'], request()->routeIs('broadcast.*') && !$reportsPage],
+            ['Call detail records', 'cdr.index', ['reports.view'], request()->routeIs('cdr.*')],
             ['Reports & Analytics', 'campaigns.runs', ['reports.view'], $reportsPage],
         ]],
         'audience' => ['Audience', [

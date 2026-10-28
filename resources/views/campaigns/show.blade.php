@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title',$campaign->name)
 @section('content')
+@include('campaigns._pricing-snapshot')
 @php($canOperate = auth()->user()->can('broadcast.operate') || (($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()||app(\App\Services\Clients\Tenancy::class)->sameAccount(auth()->user(),$campaign)) && auth()->user()->can('campaigns.manage')))
 <h2>{{ $campaign->name }}</h2><p>{{ $campaign->purpose }} · owner #{{ $campaign->owner_id }} · {{ $campaign->type==='one_way'?'One-way broadcast':'Interactive IVR' }} · <span class="pill">{{ str_replace('_',' ',$campaign->status) }}</span>{{ $campaign->archived_at?' · Archived':'' }}</p>
 @include('campaigns.nav')

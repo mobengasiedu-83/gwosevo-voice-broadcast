@@ -186,7 +186,7 @@ class BroadcastController extends Controller
             fputcsv($out, ['attempt_uuid', 'state', 'outcome', 'sent_at', 'answered_at', 'playback_started_at',
                 'playback_completed_at', 'ended_at', 'duration_ms', 'billable_minutes', 'rated_amount', 'currency',
                 'billing_exceptions'], ',', '"', '');
-            CallAttempt::with(['rating', 'timingEvidence', 'billingExceptions'])
+            CallAttempt::with(['rating', 'timingEvidence', 'billingExceptions', 'approvedVersion'])
                 ->whereIn('campaign_recipient_id', $ids)
                 ->orderBy('id')
                 ->chunk(500, function ($attempts) use ($out) {
@@ -197,7 +197,7 @@ class BroadcastController extends Controller
                             $this->csvDate($attempt->playback_started_at), $this->csvDate($attempt->playback_completed_at),
                             $this->csvDate($attempt->ended_at),
                             $attempt->timingEvidence?->duration_ms ?? 0,
-                            $attempt->timingEvidence?->billable_minutes ?? 0,
+                            $attempt->rating?->billable_minutes ?? ($attempt->answered_at ? ($attempt->recordingMinutes() ?? 0) : 0),
                             $attempt->rating ? Rating::amount($attempt->rating) : 0,
                             $this->csvCell($attempt->rating?->currency),
                             $this->csvCell($attempt->billingExceptions->pluck('issue')->implode(' | ')),
@@ -226,7 +226,7 @@ class BroadcastController extends Controller
         $user = $request->user();
         abort_unless($user->hasAnyPermission(['reports.view', 'broadcast.operate', 'audit.view', 'campaigns.approve']) || ($user->can('campaigns.view') && $campaign->owner_id === $user->id), 403);
         $ids = CampaignRecipient::where('campaign_id', $campaign->id)->pluck('id');
-        $query = CallAttempt::with(['rating', 'timingEvidence', 'billingExceptions' => fn ($q) => $q->whereNull('resolved_at')])->whereIn('campaign_recipient_id', $ids);
+        $query = CallAttempt::with(['rating', 'timingEvidence', 'approvedVersion', 'billingExceptions' => fn ($q) => $q->whereNull('resolved_at')])->whereIn('campaign_recipient_id', $ids);
         $counts = (clone $query)->selectRaw('outcome, count(*) as total')->groupBy('outcome')->pluck('total', 'outcome');
         $terminal = (clone $query)->whereNotNull('ended_at')->whereNotNull('sent_at')->whereNotIn('outcome', ['cancelled_before_send', 'no_consent', 'suppressed', 'contact_changed', 'authorization_failed'])->count();
         $answered = (clone $query)->whereNotNull('ended_at')->whereNotNull('answered_at')->whereNotNull('sent_at')->count();

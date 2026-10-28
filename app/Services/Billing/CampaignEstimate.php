@@ -45,7 +45,7 @@ class CampaignEstimate
         $phones = $contacts->pluck('phone_e164')->filter()->unique()->values();
         $suppressedPhones = $phones->isEmpty()
             ? collect()
-            : app(Suppression::class)->visible()
+            : app(Suppression::class)->forAccount($clientId)
                 ->whereIn('phone_e164', $phones->all())
                 ->where('effective_at', '<=', now())
                 ->pluck('phone_e164')
@@ -63,11 +63,12 @@ class CampaignEstimate
 
         $audio = empty($input['audio_id']) ? null : AudioFile::find((int) $input['audio_id']);
         $duration = $audio?->duration;
-        $minutes = $duration !== null && $duration > 0 ? max(1, (int) ceil($duration / 60)) : null;
 
         $tariff = $clientId === null ? null : app(Tariffs::class)->snapshot($clientId);
         $wallet = $clientId === null ? null : WalletAccount::where('client_id', $clientId)->first();
-        $rate = $tariff === null ? null : (int) ($tariff['rate_minor_per_minute'] ?? 0);
+        $pricing = app(CampaignPricing::class)->calculate($audio?->id, $duration, $tariff, $eligible);
+        $minutes = $pricing['billable_minutes'];
+        $rate = $pricing['rate_minor_per_minute'];
         $currency = $tariff['currency'] ?? $wallet?->currency;
         $scale = $tariff !== null ? (int) $tariff['minor_unit_scale'] : $wallet?->minor_unit_scale;
         $comparable = $tariff !== null && $wallet !== null
@@ -75,8 +76,8 @@ class CampaignEstimate
             && (int) $tariff['minor_unit_scale'] === $wallet->minor_unit_scale;
 
         $priced = $minutes !== null && $tariff !== null && $rate > 0;
-        $perCall = $priced ? $minutes * $rate : null;
-        $total = $perCall === null ? null : $eligible * $perCall;
+        $perCall = $pricing['rate_per_contact_minor'];
+        $total = $pricing['estimated_campaign_amount_minor'];
         $available = $wallet?->available_minor;
         $additional = $total === null || ! $comparable ? null : max(0, $total - $available);
         $covered = $additional === null || $perCall < 1 ? null : intdiv($available, $perCall);
@@ -94,6 +95,7 @@ class CampaignEstimate
         };
 
         $estimate = [
+            'billing_snapshot' => $pricing + ['total_contact_count' => $contacts->count(), 'excluded_contact_count' => $suppressed],
             'group_total' => $audience['group_total'],
             'audience_total' => $contacts->count(),
             'requested_total' => $audience['requested'],
@@ -103,6 +105,7 @@ class CampaignEstimate
             'unavailable' => $unavailable,
             'consent_on_record' => (int) $consents,
             'duration_seconds' => $duration,
+            'duration_human_label' => $duration === null ? null : sprintf('%dm %ss', intdiv((int) $duration, 60), rtrim(rtrim(number_format(fmod($duration, 60), 3, '.', ''), '0'), '.')),
             'duration_label' => $this->durationLabel($duration),
             'minutes_per_call' => $minutes,
             'rate_minor_per_minute' => $rate,
@@ -232,7 +235,7 @@ class CampaignEstimate
         }
 
         if (($input['type'] ?? 'one_way') === 'interactive') {
-            $messages[] = ['tone' => 'info', 'text' => 'Interactive campaigns can play extra IVR prompts. Only the selected recording is priced here; billing follows each answered call’s duration.'];
+            $messages[] = ['tone' => 'info', 'text' => 'Interactive campaigns can play extra IVR prompts. Billing uses the selected recording’s full length once the call is answered, regardless of talk time or extra prompts.'];
         }
 
         if ($estimate['additional_minor'] !== null && $estimate['additional_minor'] > 0) {

@@ -54,13 +54,13 @@ class FinanceReport
         $rows = $this->base($filters)
             ->select(['cl.id as client_id', 'cl.name as client_name', 'w.currency', 'w.minor_unit_scale',
                 'w.available_minor', 'w.reserved_minor'])
-            ->selectRaw("COUNT(*) as attempts,
+            ->selectRaw('COUNT(*) as attempts,
                 SUM(CASE WHEN a.answered_at IS NOT NULL THEN 1 ELSE 0 END) as answered,
                 COALESCE(SUM(e.duration_ms), 0) as duration_ms,
                 COALESCE(SUM(r.billable_minutes), 0) as billable_minutes,
                 COALESCE(SUM(r.amount_minor), 0) as charge_minor,
                 COALESCE(SUM(wr.settled_minor), 0) as settled_minor,
-                COALESCE(SUM(wr.shortfall_minor), 0) as shortfall_minor")
+                COALESCE(SUM(wr.shortfall_minor), 0) as shortfall_minor')
             ->groupBy('cl.id', 'cl.name', 'w.currency', 'w.minor_unit_scale', 'w.available_minor', 'w.reserved_minor')
             ->orderBy('cl.name')->get();
         $disputes = BillingDispute::query()->whereIn('status', ['open', 'under_review'])
@@ -100,7 +100,7 @@ class FinanceReport
             ->selectRaw("currency, minor_unit_scale,
                 COALESCE(SUM(CASE WHEN type = 'funding' AND available_delta_minor > 0 THEN available_delta_minor ELSE 0 END), 0) as funding_minor,
                 COALESCE(SUM(CASE WHEN type = 'adjustment' THEN available_delta_minor ELSE 0 END), 0) as adjustment_minor,
-                COALESCE(SUM(CASE WHEN type = 'settlement' THEN -(available_delta_minor + reserved_delta_minor) ELSE 0 END), 0) as debit_minor,
+                COALESCE(SUM(CASE WHEN type IN ('settlement', 'answer_charge') THEN -(available_delta_minor + reserved_delta_minor) ELSE 0 END), 0) as debit_minor,
                 COALESCE(SUM(CASE WHEN type = 'reversal' THEN available_delta_minor ELSE 0 END), 0) as reversal_minor")
             ->groupBy('currency', 'minor_unit_scale')->get();
         foreach ($ledger as $row) {
@@ -140,7 +140,12 @@ class FinanceReport
             ]);
         }
 
+        $carrierExpenses = (clone $this->base($filters))->whereNotNull('u.currency')
+            ->selectRaw('u.currency, u.minor_unit_scale, SUM(u.cost_minor) as cost_minor, SUM(u.billed_minutes) as billed_minutes')
+            ->groupBy('u.currency', 'u.minor_unit_scale')->get();
+
         return array_merge([
+            'carrier_expenses' => $carrierExpenses,
             'period' => ['from' => $filters['from']->toDateString(), 'to' => $filters['to']->toDateString()],
             'currencies' => array_values($buckets),
             'attempts' => array_sum(array_column($buckets, 'attempts')),
@@ -192,6 +197,7 @@ class FinanceReport
             ->join('campaigns as camp', 'camp.id', '=', 'cr.campaign_id')
             ->join('clients as cl', 'cl.id', '=', 'camp.client_id')
             ->leftJoin('call_timing_evidence as e', 'e.call_attempt_id', '=', 'a.id')
+            ->leftJoin('call_telecom_usage as u', 'u.call_attempt_id', '=', 'a.id')
             ->leftJoin('call_ratings as r', 'r.call_attempt_id', '=', 'a.id')
             ->leftJoin('wallet_reservations as wr', 'wr.call_attempt_id', '=', 'a.id')
             ->leftJoin('wallets as w', 'w.client_id', '=', 'cl.id')
@@ -207,6 +213,7 @@ class FinanceReport
     private function columns(): array
     {
         return ['cl.id as client_id', 'cl.name as client_name', 'camp.name as campaign_name',
+            'u.duration_ms as telecom_duration_ms', 'u.billed_minutes as telecom_billed_minutes', 'u.cost_minor as telecom_cost_minor', 'u.currency as telecom_currency', 'u.minor_unit_scale as telecom_scale',
             'a.id as attempt_id', 'a.uuid as attempt_uuid', 'a.answered_at', 'a.ended_at', 'a.state', 'a.outcome',
             'w.currency as wallet_currency', 'w.minor_unit_scale as wallet_scale',
             'e.duration_ms', 'e.billable_minutes as evidence_minutes',

@@ -47,7 +47,7 @@ class Wallet
     /** Reasons an admission check can refuse to hold credit. */
     public const REASONS = ['wallet_missing', 'tariff_missing', 'tariff_not_priced', 'currency_mismatch', 'insufficient_credit', 'duration_missing'];
 
-    public const TYPES = ['funding', 'adjustment', 'reversal', 'reservation', 'release', 'settlement'];
+    public const TYPES = ['answer_charge', 'funding', 'adjustment', 'reversal', 'reservation', 'release', 'settlement'];
 
     public static function amount(int $minor, ?int $scale): string
     {
@@ -386,6 +386,57 @@ class Wallet
         });
     }
 
+    /** Deduct the full frozen recording cost once on answer, regardless of call duration. */
+    public function answer(CallAttempt $attempt): string
+    {
+        if (! $attempt->answered_at || ! $attempt->sent_at || ! $attempt->tariff_snapshot) {
+            return 'not_applicable';
+        }
+
+        if ($attempt->recordingMinutes() === null) {
+            app(Rating::class)->issue($attempt, 'recording_duration_missing', 'Approved campaign snapshot has no recording duration');
+
+            return 'held';
+        }
+
+        return DB::transaction(function () use ($attempt) {
+            $clientId = app(Tenancy::class)->ownerOf($attempt);
+            $wallet = WalletAccount::where('client_id', $clientId)->lockForUpdate()->first();
+            if (! $wallet || $clientId === null) {
+                return 'not_applicable';
+            }
+            $reservation = WalletReservation::where('call_attempt_id', $attempt->id)->lockForUpdate()->first();
+            if (! $reservation) {
+                app(Rating::class)->issue($attempt, 'wallet_reservation_missing', 'Answered call has no wallet reservation');
+
+                return 'no_reservation';
+            }
+            $key = 'billing:answer:'.$attempt->id;
+            if ($reservation->state === 'settled' || WalletLedgerEntry::where('idempotency_key', $key)->exists()) {
+                return 'duplicate';
+            }
+            if (! $this->matches($wallet, $attempt->tariff_snapshot)) {
+                app(Rating::class)->issue($attempt, 'wallet_currency_mismatch', 'Answer charge currency differs from wallet');
+
+                return 'held';
+            }
+            $charge = $attempt->recordingMinutes() * (int) $attempt->tariff_snapshot['rate_minor_per_minute'];
+            $fromReserved = $reservation->state === 'held' ? min($charge, $reservation->amount_minor, $wallet->reserved_minor) : 0;
+            $fromAvailable = min($charge - $fromReserved, $wallet->available_minor);
+            $wallet->reserved_minor -= $fromReserved;
+            $wallet->available_minor -= $fromAvailable;
+            $wallet->save();
+            $reservation->update(['answer_paid_minor' => $fromReserved + $fromAvailable, 'answer_reserved_minor' => $fromReserved]);
+            $this->entry($wallet, 'answer_charge', -$fromAvailable, -$fromReserved, $reservation, $attempt, null,
+                'Full recording charge on answer '.$attempt->uuid, null, $key);
+            if ($fromReserved + $fromAvailable < $charge) {
+                app(Rating::class)->issue($attempt, 'wallet_shortfall', 'Recording answer charge exceeds remaining wallet credit');
+            }
+
+            return 'charged';
+        });
+    }
+
     /** Release a held reservation after a definitively unanswered call. */
     public function release(CallAttempt $attempt, string $reason, ?User $actor = null): bool
     {
@@ -395,7 +446,7 @@ class Wallet
                 return false;
             }
             $wallet = WalletAccount::whereKey($reservation->wallet_id)->lockForUpdate()->firstOrFail();
-            $amount = $reservation->amount_minor;
+            $amount = $reservation->amount_minor - $reservation->answer_reserved_minor;
             if ($wallet->reserved_minor < $amount) {
                 app(Rating::class)->issue($attempt, 'wallet_reserved_underflow', 'Reserved balance is lower than the held reservation; finance review required.');
 
@@ -450,6 +501,11 @@ class Wallet
             if (! $attempt || CallRating::where('call_attempt_id', $attempt->id)->exists()) {
                 continue;
             }
+            if ($attempt->answered_at) {
+                app(Rating::class)->internal($attempt, $actor);
+
+                continue;
+            }
             if ($this->release($attempt, 'Hold expired after '.$hours.'h without final rating evidence', $actor)) {
                 $released++;
             }
@@ -495,12 +551,13 @@ class Wallet
             }
             $released = 0;
             if ($reservation->state === 'held') {
-                $released = $reservation->amount_minor;
+                $released = $reservation->amount_minor - $reservation->answer_reserved_minor;
                 $wallet->reserved_minor -= $released;
                 $wallet->available_minor += $released;
             }
-            $payable = min($charge, $wallet->available_minor);
-            $shortfall = $charge - $payable;
+            $remaining = max(0, $charge - $reservation->answer_paid_minor);
+            $payable = min($remaining, $wallet->available_minor);
+            $shortfall = $remaining - $payable;
             $wallet->available_minor -= $payable;
             $wallet->save();
             $reservation->update([
@@ -768,7 +825,7 @@ class Wallet
         // as reservation history grows.
         $row = WalletReservation::where('wallet_id', $wallet->id)->selectRaw(
             "SUM(CASE WHEN state = 'held' THEN 1 ELSE 0 END) as held_count,
-             COALESCE(SUM(CASE WHEN state = 'held' THEN amount_minor ELSE 0 END), 0) as held_minor,
+             COALESCE(SUM(CASE WHEN state = 'held' THEN amount_minor - answer_reserved_minor ELSE 0 END), 0) as held_minor,
              SUM(CASE WHEN state = 'held' AND reserved_at <= ? THEN 1 ELSE 0 END) as stale_hold_count,
              MIN(CASE WHEN state = 'held' THEN reserved_at END) as oldest_hold_at,
              SUM(CASE WHEN state = 'settled' THEN 1 ELSE 0 END) as settled_count,
@@ -834,7 +891,7 @@ class Wallet
     {
         $available = (int) WalletLedgerEntry::where('wallet_id', $wallet->id)->sum('available_delta_minor');
         $reserved = (int) WalletLedgerEntry::where('wallet_id', $wallet->id)->sum('reserved_delta_minor');
-        $held = (int) WalletReservation::where('wallet_id', $wallet->id)->where('state', 'held')->sum('amount_minor');
+        $held = (int) WalletReservation::where('wallet_id', $wallet->id)->where('state', 'held')->selectRaw('COALESCE(SUM(amount_minor - answer_reserved_minor), 0) as total')->value('total');
         $chain = $this->ledgerChain($wallet);
         $lifecycle = $this->lifecycle($wallet);
 
@@ -915,7 +972,8 @@ class Wallet
 
         // A settlement entry's (available + reserved) delta is the negative of the
         // amount actually paid; shortfalls remain receivables and are not debited.
-        $paid = -(int) WalletLedgerEntry::where('wallet_id', $wallet->id)->where('type', 'settlement')
+        $paid = -(int) WalletLedgerEntry::where('wallet_id', $wallet->id)->whereIn('type', ['settlement', 'answer_charge'])
+            ->whereIn('wallet_reservation_id', WalletReservation::where('wallet_id', $wallet->id)->where('state', 'settled')->select('id'))
             ->selectRaw('COALESCE(SUM(available_delta_minor + reserved_delta_minor), 0) as total')->value('total');
         $payable = (int) WalletReservation::where('wallet_id', $wallet->id)->where('state', 'settled')
             ->selectRaw('COALESCE(SUM(settled_minor - shortfall_minor), 0) as total')->value('total');

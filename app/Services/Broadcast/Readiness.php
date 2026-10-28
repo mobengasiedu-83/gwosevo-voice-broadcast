@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\Contact;
 use App\Models\IvrFlow;
 use App\Models\TrunkProfile;
+use App\Services\Billing\CampaignPricing;
 use App\Services\Billing\Tariffs;
 use App\Services\Campaigns\Workspace;
 use App\Services\Clients\Tenancy;
@@ -97,8 +98,18 @@ class Readiness
             }
         }
 
+        $tariff = app(Tariffs::class)->snapshot($campaign->client_id);
+        $excludedPhones = app(Suppression::class)->forAccount($campaign->client_id)->whereIn('phone_e164', array_column($targets, 'phone_e164'))
+            ->where('effective_at', '<=', now())->pluck('phone_e164')->flip();
+        $eligible = count(array_filter($targets, fn ($target) => ! isset($excludedPhones[$target['phone_e164']])));
+        $pricing = app(CampaignPricing::class)->calculate($audio->id, $audio->duration, $tariff, $eligible)
+            + ['total_contact_count' => count($targets), 'excluded_contact_count' => count($targets) - $eligible];
+        if ($campaign->client_id !== null && $pricing['audio_duration_ms'] === null) {
+            $this->fail('The selected recording has no measured duration. Re-process it in the Audio Library.');
+        }
+
         return [
-            'client_id' => $campaign->client_id, 'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_duration_ms' => (int) ceil($audio->duration * 1000), 'reservation_tariff' => app(Tariffs::class)->snapshot($campaign->client_id), 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
+            'client_id' => $campaign->client_id, 'media_mode' => config('voice_broadcast.media_mode', 'pbx'), 'audio_id' => $audio->id, 'audio_duration_ms' => $pricing['audio_duration_ms'], 'billing' => $pricing, 'reservation_tariff' => $tariff, 'audio_uuid' => $audio->uuid, 'checksum' => $audio->checksum, 'trunk_id' => $trunk->id,
             'trunk_name' => $trunk->name, 'caller_id' => $callerId, 'number_format' => $trunk->number_format,
             'concurrency' => (int) $c['concurrency'], 'cps' => (float) $c['cps'], 'timezone' => $policy['timezone'], 'scheduled_at' => $policy['scheduled_at'], 'priority' => $policy['priority'], 'ivr' => $ivr,
             'window_start' => $c['window_start'], 'window_end' => $c['window_end'], 'purpose' => $campaign->purpose,

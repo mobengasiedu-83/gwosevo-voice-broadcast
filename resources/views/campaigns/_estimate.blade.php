@@ -7,10 +7,10 @@ $walletCurrency = $estimate['wallet_currency'] ?? $estimate['currency'];
 @endphp
 <section class="campaign-estimate" aria-labelledby="campaign-estimate-title">
     <h2 id="campaign-estimate-title">Credit forecast</h2>
-    <p>One attempt for every eligible contact. Unanswered calls are not charged; retries only re-dial busy, failed or unanswered attempts.</p>
+    <p>Audio Duration → Billable Minutes → Rate Per Contact → Eligible Contacts → Estimated Campaign Cost. One attempt for every eligible contact. Unanswered calls are not charged; retries only re-dial busy, failed or unanswered attempts.</p>
     <div class="kpi-grid campaign-estimate-grid">
         <div class="kpi">
-            <div>Contacts in group</div>
+            <div>Total Contacts</div>
             <strong>{{ number_format($estimate['audience_total']) }}</strong>
             <small>
                 @if($estimate['group_total'] > 0)
@@ -28,8 +28,9 @@ $walletCurrency = $estimate['wallet_currency'] ?? $estimate['currency'];
             <small>{{ number_format($estimate['suppressed']) }} on DND/suppression · {{ number_format($estimate['unavailable']) }} removed · {{ number_format($estimate['consent_on_record']) }} with consent on record</small>
         </div>
         <div class="kpi">
-            <div>Recording duration</div>
-            <strong>{{ $estimate['duration_label'] ?? '—' }}</strong>
+            <div>Audio Duration</div>
+            <strong>{{ $estimate['duration_human_label'] ?? '—' }}</strong>
+            <small>{{ $estimate['duration_seconds'] === null ? '' : $estimate['duration_label'].' · '.$estimate['duration_seconds'].' seconds' }}</small>
             <small>
                 @if($estimate['minutes_per_call'] !== null)
                 {{ number_format($estimate['minutes_per_call']) }} billable {{ $estimate['minutes_per_call'] === 1 ? 'minute' : 'minutes' }} per answered call (rounded up)
@@ -39,7 +40,22 @@ $walletCurrency = $estimate['wallet_currency'] ?? $estimate['currency'];
             </small>
         </div>
         <div class="kpi">
-            <div>Estimated credit for one attempt each</div>
+            <div>Billable Duration</div>
+            <strong>{{ $estimate['minutes_per_call'] === null ? '—' : number_format($estimate['minutes_per_call']).' '.($estimate['minutes_per_call'] === 1 ? 'minute' : 'minutes') }}</strong>
+            <small>Audio duration rounded up to the next whole minute</small>
+        </div>
+        <div class="kpi">
+            <div>Rate Per Minute</div>
+            <strong>{{ $estimate['rate_minor_per_minute'] === null ? '—' : $estimate['currency'].' '.$money($estimate['rate_minor_per_minute']) }}</strong>
+            <small>Configured account rate plan</small>
+        </div>
+        <div class="kpi">
+            <div>Calculated Rate Per Contact / MSISDN</div>
+            <strong>{{ $estimate['per_call_minor'] === null ? '—' : $estimate['currency'].' '.$money($estimate['per_call_minor']) }}</strong>
+            <small>The same audio-based rate applies to every contact; no individual rate entry</small>
+        </div>
+        <div class="kpi">
+            <div>Estimated Campaign Cost</div>
             <strong>{{ $estimate['total_minor'] === null ? '—' : $money($estimate['total_minor']).' '.$estimate['currency'] }}</strong>
             <small>
                 @if($estimate['per_call_minor'] !== null)

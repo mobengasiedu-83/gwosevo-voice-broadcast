@@ -18,7 +18,7 @@ class WalletReservation extends Model
     protected function casts(): array
     {
         return [
-            'tariff_snapshot' => 'array', 'amount_minor' => 'integer', 'settled_minor' => 'integer', 'shortfall_minor' => 'integer',
+            'answer_paid_minor' => 'integer', 'answer_reserved_minor' => 'integer', 'tariff_snapshot' => 'array', 'amount_minor' => 'integer', 'settled_minor' => 'integer', 'shortfall_minor' => 'integer',
             'minor_unit_scale' => 'integer', 'reserved_at' => 'datetime', 'settled_at' => 'datetime', 'released_at' => 'datetime',
         ];
     }

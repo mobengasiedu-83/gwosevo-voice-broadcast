@@ -131,16 +131,16 @@ class Rating
 
                 return 'held';
             }
-            if (! $a->ended_at) {
-                // Reuse the operational safety gate: only uncertain calls absent from a fresh full channel snapshot can end here.
-                app(Reconciliation::class)->resolve($actor, array_merge($record, ['billable_seconds' => intdiv($ms, 1000)]), $evidence);
-                $a->refresh();
-            }
             $timing = $existing ?? CallTimingEvidence::create([
                 'call_attempt_id' => $a->id, 'source' => $source, 'reference' => $evidence, 'payload_hash' => $hash,
                 'answered' => $answered, 'disposition' => $record['disposition'], 'answer_timestamp' => $payload['answer_timestamp'], 'end_timestamp' => $payload['end_timestamp'],
                 'duration_ms' => $ms, 'billable_minutes' => self::minutes($answered, $ms), 'verified_by' => $actor->id, 'created_at' => now(),
             ]);
+            if (! $a->ended_at) {
+                // Reuse the operational safety gate: only uncertain calls absent from a fresh full channel snapshot can end here.
+                app(Reconciliation::class)->resolve($actor, array_merge($record, ['billable_seconds' => intdiv($ms, 1000)]), $evidence);
+                $a->refresh();
+            }
             if (! $existing) {
                 $updates = ['ended_at' => CarbonImmutable::instance($end), 'billable_seconds' => intdiv($ms, 1000)];
                 if ($answered) {
@@ -161,13 +161,86 @@ class Rating
                 }
                 app(Foundation::class)->audit($actor, 'billing.timing_verified', $a, ['source' => $source, 'evidence' => $evidence, 'duration_ms' => $ms]);
             }
+            app(TelecomUsage::class)->record($a);
             $this->close($a, ['timing_required', 'timing_precision', 'invalid_timing'], $actor);
 
             return $this->finalize($a, $timing, $actor);
         });
     }
 
-    private function finalize(CallAttempt $a, CallTimingEvidence $timing, User $actor): string
+    /**
+     * Charge the approved recording's full rounded length on answer. The
+     * gateway answer/hangup timeline is retained separately as actual call time.
+     */
+    public function internal(CallAttempt $a, ?User $actor = null): string
+    {
+        // Serialize event replays and cleanup against the same attempt.
+        return DB::transaction(function () use ($a, $actor) {
+            $a = CallAttempt::whereKey($a->id)->lockForUpdate()->firstOrFail();
+            if (! $a->answered_at || ! $a->sent_at) {
+                return 'not_applicable';
+            }
+            app(TelecomUsage::class)->record($a);
+            if ($rating = CallRating::where('call_attempt_id', $a->id)->first()) {
+                app(Wallet::class)->settle($rating);
+
+                return 'rated';
+            }
+            if (! $this->validTariff($a, $actor)) {
+                return 'held';
+            }
+            if ($a->recordingDurationMs() === null) {
+                $this->issue($a, 'recording_duration_missing', 'Approved campaign snapshot has no measured recording duration', $actor);
+
+                return 'held';
+            }
+            $this->close($a, ['recording_duration_missing'], $actor);
+            app(Wallet::class)->answer($a);
+            if (! $a->ended_at) {
+                return 'answered';
+            }
+            $answer = CarbonImmutable::instance($a->answered_at);
+            $end = CarbonImmutable::instance($a->ended_at)->max($answer);
+            // Round fractional milliseconds up so a minute boundary is never underbilled.
+            $us = max(0, (int) $end->format('Uu') - (int) $answer->format('Uu'));
+            $ms = intdiv($us + 999, 1000);
+            if ($ms > 86400000) {
+                $this->issue($a, 'invalid_timing', 'Recorded call exceeds 24 hours', $actor);
+
+                return 'held';
+            }
+            $payload = ['answered' => true, 'answer_timestamp' => $answer->utc()->format('Y-m-d\TH:i:s.u\Z'),
+                'end_timestamp' => $end->utc()->format('Y-m-d\TH:i:s.u\Z'), 'duration_ms' => $ms];
+            $timing = CallTimingEvidence::firstOrCreate(['call_attempt_id' => $a->id], [
+                'source' => config('billing.internal_timing_source', 'engine'), 'reference' => 'gateway:answer_event:'.$a->uuid,
+                'payload_hash' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
+                'answered' => true, 'disposition' => 'ANSWERED',
+                'answer_timestamp' => $payload['answer_timestamp'], 'end_timestamp' => $payload['end_timestamp'],
+                'duration_ms' => $ms, 'billable_minutes' => self::minutes(true, $ms),
+                'verified_by' => $actor?->id, 'created_at' => now(),
+            ]);
+            $this->close($a, ['timing_required', 'timing_precision', 'invalid_timing'], $actor);
+
+            return $this->finalize($a, $timing, $actor);
+        });
+    }
+
+    private function validTariff(CallAttempt $a, ?User $actor): bool
+    {
+        $tariff = $a->tariff_snapshot;
+        $issue = ! $tariff ? 'missing_tariff' : (Validator::make($tariff, [
+            'rate_minor_per_minute' => 'required|integer|min:0|max:1000000000',
+            'currency' => 'required|regex:/\A[A-Z]{3}\z/', 'minor_unit_scale' => 'required|integer|min:0|max:6',
+            'playback_policy' => 'required|in:charge_answered,hold_on_failure', 'policy_version' => 'required|in:ceil_minute_v1',
+        ])->fails() ? 'invalid_tariff' : null);
+        if ($issue) {
+            $this->issue($a, $issue, 'Attempt tariff snapshot', $actor);
+        }
+
+        return $issue === null;
+    }
+
+    private function finalize(CallAttempt $a, CallTimingEvidence $timing, ?User $actor): string
     {
         if (BillingException::where('call_attempt_id', $a->id)->whereNull('resolved_at')->whereIn('issue', ['correlation_conflict', 'answer_conflict', 'duration_conflict', 'timing_conflict'])->exists()) {
             return 'held';
@@ -189,20 +262,25 @@ class Rating
 
             return 'held';
         }
-        if ($timing->answered && ($tariff['playback_policy'] ?? '') !== 'charge_answered' && ! ($a->playback_completed_at || $a->ivr_completed_at || $a->transfer_answered_at)) {
-            $this->issue($a, 'playback_policy', $timing->reference, $actor);
+        $this->close($a, ['playback_policy'], $actor);
+        // Approved campaign snapshots freeze the recording price basis. Legacy
+        // imports without a campaign version retain their historical policy.
+        $recordingMs = $timing->answered ? $a->recordingDurationMs() : null;
+        if ($timing->answered && $a->campaign_version_id && $recordingMs === null) {
+            $this->issue($a, 'recording_duration_missing', 'Approved campaign snapshot has no recording duration', $actor);
 
             return 'held';
         }
-        $this->close($a, ['playback_policy'], $actor);
+        $minutes = $recordingMs !== null ? self::minutes(true, $recordingMs) : $timing->billable_minutes;
+        $policy = $recordingMs !== null ? 'recording_minute_v1' : 'ceil_minute_v1';
         $rating = CallRating::create([
             'call_attempt_id' => $a->id, 'call_timing_evidence_id' => $timing->id, 'tariff_snapshot' => $tariff,
-            'policy_version' => 'ceil_minute_v1', 'duration_ms' => $timing->duration_ms, 'billable_minutes' => $timing->billable_minutes,
-            'amount_minor' => $timing->answered ? $timing->billable_minutes * (int) $tariff['rate_minor_per_minute'] : 0,
+            'policy_version' => $policy, 'duration_ms' => $recordingMs ?? $timing->duration_ms, 'billable_minutes' => $minutes,
+            'amount_minor' => $timing->answered ? $minutes * (int) $tariff['rate_minor_per_minute'] : 0,
             'currency' => $tariff['currency'] ?? null, 'minor_unit_scale' => $tariff['minor_unit_scale'] ?? null, 'created_at' => now(),
         ]);
         app(Wallet::class)->settle($rating);
-        app(Foundation::class)->audit($actor, 'billing.call_rated', $a, ['minutes' => $timing->billable_minutes, 'policy' => 'ceil_minute_v1']);
+        AuditLog::create(['client_id' => app(Tenancy::class)->ownerOf($a), 'actor_id' => $actor?->id, 'action' => 'billing.call_rated', 'entity_type' => $a->getMorphClass(), 'entity_id' => $a->id, 'details' => ['minutes' => $minutes, 'policy' => $policy, 'recording_duration_ms' => $recordingMs], 'created_at' => now()]);
 
         return 'rated';
     }
@@ -236,6 +314,9 @@ class Rating
 
     public function observe(CallAttempt $a): void
     {
+        if ($a->answered_at && $a->sent_at) {
+            $this->internal($a);
+        }
         if (! $a->ended_at || ! $this->observedAnswer($a)) {
             return;
         }

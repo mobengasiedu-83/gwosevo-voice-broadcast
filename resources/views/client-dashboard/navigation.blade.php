@@ -6,6 +6,7 @@
     $groups = [
         'campaigns' => ['Campaigns', [
             ['campaigns.index', 'My campaigns', 'campaigns.view', ['campaigns.index', 'campaigns.create', 'campaigns.show', 'campaigns.edit']],
+            ['cdr.index', 'Call detail records', 'reports.view', ['cdr.*']],
             ['campaigns.runs', 'Reports', 'reports.view', ['campaigns.runs', 'broadcast.report']],
         ]],
         'audience' => ['Audience', [

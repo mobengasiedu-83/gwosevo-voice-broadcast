@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -23,4 +24,7 @@ Artisan::command('identity:prune', function () {
 Schedule::command('identity:prune')->daily()->withoutOverlapping();
 
 Schedule::command('billing:wallet-expire --scheduled')->hourly()->withoutOverlapping()
-    ->onFailure(fn () => \Illuminate\Support\Facades\Log::error('billing.hold_cleanup_failed'));
+    ->onFailure(fn () => Log::error('billing.hold_cleanup_failed'));
+
+// Recover a missed/replayed AMI event without waiting for an imported provider CDR.
+Schedule::command('billing:finalize-answered --apply')->everyMinute()->withoutOverlapping();

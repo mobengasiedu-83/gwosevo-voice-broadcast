@@ -150,7 +150,10 @@ class CampaignController extends Controller
             }
         }
 
-        return response()->view('campaigns.show', ['campaign' => $campaign, 'schedulePreview' => $schedulePreview, 'selectedAudio' => AudioFile::find($campaign->configuration['audio_id'] ?? null), 'readiness' => $readiness, 'snapshot' => $snapshot, 'eligibility' => $eligibility, 'versions' => $campaign->versions()->orderByDesc('version')->get(), 'reviews' => DB::table('campaign_reviews')->where('campaign_id', $campaign->id)->orderByDesc('id')->get(), 'run' => CampaignRun::where('campaign_id', $campaign->id)->first(), 'templates' => $w->templates($r->user())->when(app(Tenancy::class)->current() === null && (! $r->user()->isSuperAdministrator()), fn ($q) => $q->where('owner_id', $r->user()->id))->latest('id')->limit(100)->get()])->header('Cache-Control', 'private, no-store');
+        $savedVersion = $campaign->versions()->orderByDesc('version')->first();
+        $pricingSnapshot = $savedVersion?->snapshot['broadcast']['billing'] ?? null;
+
+        return response()->view('campaigns.show', ['pricingSnapshot' => $pricingSnapshot, 'campaign' => $campaign, 'schedulePreview' => $schedulePreview, 'selectedAudio' => AudioFile::find($campaign->configuration['audio_id'] ?? null), 'readiness' => $readiness, 'snapshot' => $snapshot, 'eligibility' => $eligibility, 'versions' => $campaign->versions()->orderByDesc('version')->get(), 'reviews' => DB::table('campaign_reviews')->where('campaign_id', $campaign->id)->orderByDesc('id')->get(), 'run' => CampaignRun::where('campaign_id', $campaign->id)->first(), 'templates' => $w->templates($r->user())->when(app(Tenancy::class)->current() === null && (! $r->user()->isSuperAdministrator()), fn ($q) => $q->where('owner_id', $r->user()->id))->latest('id')->limit(100)->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function review(Request $r, Campaign $campaign, Workspace $w, Foundation $f)

@@ -46,7 +46,7 @@ class FinanceReportController extends Controller
             $out = fopen('php://output', 'w');
             fputcsv($out, ['client', 'campaign', 'attempt_uuid', 'answered_at', 'ended_at', 'duration_ms',
                 'billable_minutes', 'rated_minutes', 'charge_minor', 'currency', 'minor_unit_scale',
-                'reservation_state', 'settled_minor', 'shortfall_minor', 'settlement_entry_id', 'rated_at'], ',', '"', '');
+                'reservation_state', 'settled_minor', 'shortfall_minor', 'settlement_entry_id', 'rated_at', 'telecom_duration_ms', 'telecom_billed_minutes', 'telecom_cost_minor', 'telecom_currency'], ',', '"', '');
             foreach ($report->exportRows($filters) as $row) {
                 fputcsv($out, [
                     $this->cell($row->client_name), $this->cell($row->campaign_name), $this->cell($row->attempt_uuid),
@@ -54,7 +54,7 @@ class FinanceReportController extends Controller
                     $row->duration_ms ?? 0, $row->evidence_minutes ?? 0, $row->rated_minutes ?? 0,
                     $row->amount_minor ?? 0, $row->rating_currency ?? $row->wallet_currency ?? '',
                     $row->rating_scale ?? $row->wallet_scale ?? 0, $this->cell($row->reservation_state),
-                    $row->settled_minor ?? 0, $row->shortfall_minor ?? 0, $row->settlement_entry_id ?? '', $this->date($row->rated_at),
+                    $row->settled_minor ?? 0, $row->shortfall_minor ?? 0, $row->settlement_entry_id ?? '', $this->date($row->rated_at), $row->telecom_duration_ms ?? '', $row->telecom_billed_minutes ?? '', $row->telecom_cost_minor ?? '', $row->telecom_currency ?? '',
                 ], ',', '"', '');
             }
             fclose($out);
@@ -69,6 +69,7 @@ class FinanceReportController extends Controller
     private function cell($value): string
     {
         $value = (string) ($value ?? '');
+
         // Prevent spreadsheet formula execution from imported client names.
         return preg_match('/\A[=+\-@]/', $value) ? "'".$value : $value;
     }

@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\AudioFile;
 use App\Models\AuditLog;
 use App\Models\CallAttempt;
 use App\Models\CallRating;
 use App\Models\CallTariff;
+use App\Models\CallTelecomUsage;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\CampaignVersion;
@@ -14,11 +16,14 @@ use App\Models\User;
 use App\Models\WalletAccount;
 use App\Models\WalletLedgerEntry;
 use App\Models\WalletReservation;
+use App\Services\Billing\FinanceReport;
 use App\Services\Billing\Rating;
 use App\Services\Billing\Tariffs;
+use App\Services\Billing\TelecomUsage;
 use App\Services\Billing\Wallet;
 use App\Services\Billing\WalletDeclined;
 use App\Services\Broadcast\Engine;
+use App\Services\Broadcast\EventProcessor;
 use App\Services\Clients\Accounts;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -70,21 +75,233 @@ class WalletModuleTest extends TestCase
         return app(Wallet::class)->open($this->admin, $this->client, 'GHS', 2, 'Approved onboarding');
     }
 
-    private function attempt(int $ms = 60001, bool $answered = true, int $attemptNo = 1, int $endOffsetSeconds = 2): array
+    private function attempt(int $ms = 60001, bool $answered = true, int $attemptNo = 1, int $endOffsetSeconds = 2, ?int $recordingMs = null): array
     {
         $end = CarbonImmutable::now()->subSeconds($endOffsetSeconds);
         $answer = $end->subMilliseconds($ms);
         $recipient = CampaignRecipient::create(['campaign_id' => $this->campaign->id, 'status' => 'terminal']);
         $uuid = (string) Str::uuid();
+        $version = CampaignVersion::create(['campaign_id' => $this->campaign->id, 'version' => max(100000, (int) $this->campaign->versions()->max('version') + 1), 'snapshot' => ['type' => 'interactive', 'broadcast' => ['audio_duration_ms' => $recordingMs ?? max(1, $ms)]], 'approved_by' => $this->admin->id, 'approved_at' => now()]);
         $attempt = CallAttempt::create([
             'uuid' => $uuid, 'uniqueid' => $uuid, 'action_id' => 'vb-'.$uuid, 'linkedid' => 'linked-'.$uuid,
-            'campaign_recipient_id' => $recipient->id, 'attempt_no' => $attemptNo, 'state' => 'terminal', 'outcome' => $answered ? 'completed' : 'busy',
+            'campaign_version_id' => $version->id, 'campaign_recipient_id' => $recipient->id, 'attempt_no' => $attemptNo, 'state' => 'terminal', 'outcome' => $answered ? 'completed' : 'busy',
             'sent_at' => $answer->subSeconds(2), 'answered_at' => $answered ? $answer : null, 'ended_at' => $end,
             'playback_completed_at' => $answered ? $end : null,
             'tariff_snapshot' => app(Tariffs::class)->snapshot($this->client->id),
         ]);
 
         return [$attempt, ['attempt_uuid' => $uuid, 'uniqueid' => $uuid, 'linkedid' => $attempt->linkedid, 'disposition' => $answered ? 'ANSWERED' : 'BUSY', 'answered_at' => $answered ? $answer->format('Y-m-d\TH:i:s.u\Z') : null, 'ended_at' => $end->format('Y-m-d\TH:i:s.u\Z'), 'duration_ms' => $answered ? $ms : 0]];
+    }
+
+    public function test_carrier_expense_uses_actual_time_and_its_own_frozen_rate_without_debiting_the_client(): void
+    {
+        config()->set('telecom', ['rate_per_minute' => '0.30', 'currency' => 'GHS', 'minor_unit_scale' => 2]);
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Separate carrier test', 'TEST-CARRIER');
+        [$attempt] = $this->attempt(130000, recordingMs: 75000);
+        $wallets->reserve($attempt);
+        config()->set('telecom.rate_per_minute', '9.00');
+        app(Rating::class)->internal($attempt);
+        $usage = $attempt->fresh()->telecomUsage;
+        $this->assertSame(130000, $usage->duration_ms);
+        $this->assertSame(3, $usage->billed_minutes);
+        $this->assertSame(180000, $usage->billed_duration_ms);
+        $this->assertSame(90, $usage->cost_minor);
+        $finance = app(FinanceReport::class);
+        $summary = $finance->summary($finance->normalize(['from' => '2026-10-26', 'to' => '2026-10-26']));
+        $this->assertEquals(90, $summary['carrier_expenses']->first()->cost_minor);
+        $this->assertSame(60, $summary['currencies'][0]['debit_minor']);
+        $this->assertSame(60, $attempt->fresh()->rating->amount_minor);
+        $this->assertSame(940, $wallet->refresh()->available_minor);
+        app(TelecomUsage::class)->record($attempt);
+        $this->assertSame(940, $wallet->refresh()->available_minor);
+        $this->assertSame(1, CallTelecomUsage::where('call_attempt_id', $attempt->id)->count());
+        config()->set('telecom.rate_per_minute', null);
+        [$unknown] = $this->attempt(5000, recordingMs: 75000);
+        $usage = app(TelecomUsage::class)->record($unknown);
+        $this->assertNull($usage->cost_minor);
+        $this->assertSame(1, $usage->billed_minutes);
+        $this->assertSame(940, $wallet->refresh()->available_minor);
+    }
+
+    public function test_full_recording_cost_is_deducted_on_answer_and_hangup_does_not_charge_again(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Answer billing test', 'TEST-ANSWER');
+        [$attempt] = $this->attempt(0, recordingMs: 62000);
+        $attempt->update(['state' => 'active', 'outcome' => null, 'ended_at' => null, 'playback_completed_at' => null, 'answered_at' => now()]);
+        $wallets->reserve($attempt);
+        $this->assertSame(550, $wallet->refresh()->available_minor);
+        $this->assertSame(450, $wallet->reserved_minor);
+        $this->assertSame('answered', app(Rating::class)->internal($attempt));
+        $this->assertSame(390, $wallet->refresh()->reserved_minor);
+        $this->assertSame(940, $wallet->available_minor + $wallet->reserved_minor);
+        $this->assertTrue($wallets->verify($wallet)['ok']);
+        app(Rating::class)->internal($attempt);
+        $this->assertSame(1, WalletLedgerEntry::where('type', 'answer_charge')->count());
+        $this->travel(61)->seconds();
+        app(Engine::class)->terminal($attempt->fresh(), 'playback_failed');
+        $this->assertSame(940, $wallet->refresh()->available_minor);
+        $this->assertSame(0, $wallet->reserved_minor);
+        $this->assertSame(60, $attempt->fresh()->rating->amount_minor);
+        $this->assertTrue($wallets->verify($wallet)['ok']);
+        app(Rating::class)->internal($attempt);
+        $this->assertSame(940, $wallet->refresh()->available_minor);
+    }
+
+    public function test_ami_answer_event_charges_before_hangup_and_no_answer_stays_free(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'AMI billing test', 'TEST-AMI');
+        [$attempt] = $this->attempt(0, false);
+        $attempt->update(['ended_at' => null, 'state' => 'active', 'outcome' => null]);
+        $wallets->reserve($attempt);
+        $frame = ['Event' => 'Newstate', 'Uniqueid' => $attempt->uuid, 'ChannelStateDesc' => 'Up'];
+        app(EventProcessor::class)->ingest($frame);
+        $this->assertNotNull($attempt->fresh()->answered_at);
+        $this->assertNull($attempt->fresh()->ended_at);
+        $this->assertSame(970, $wallet->refresh()->available_minor + $wallet->reserved_minor);
+        app(EventProcessor::class)->ingest($frame);
+        app(EventProcessor::class)->ingest(['Event' => 'Hangup', 'Uniqueid' => $attempt->uuid, 'Cause' => '16']);
+        $this->assertSame(970, $wallet->refresh()->available_minor);
+        $this->assertSame(30, $attempt->fresh()->rating->amount_minor);
+        [$busy] = $this->attempt(0, false);
+        $version = CampaignVersion::create(['campaign_id' => $this->campaign->id, 'version' => 1, 'snapshot' => ['broadcast' => ['purpose' => 'Updates', 'retry_policy' => ['max_attempts' => 1]]], 'approved_by' => $this->admin->id, 'approved_at' => now()]);
+        $busy->update(['campaign_version_id' => $version->id, 'ended_at' => null, 'state' => 'active', 'outcome' => null]);
+        $wallets->reserve($busy);
+        app(Engine::class)->terminal($busy, 'busy');
+        $this->assertSame(970, $wallet->refresh()->available_minor);
+        $this->assertSame(0, $wallet->reserved_minor);
+        $this->assertTrue($wallets->verify($wallet)['ok']);
+    }
+
+    public function test_answer_charge_shortfall_is_recorded_without_a_negative_or_double_debit(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '4.50', 'Shortfall test', 'TEST-SHORT');
+        [$attempt] = $this->attempt(0);
+        $wallets->reserve($attempt);
+        $wallets->release($attempt, 'Previously expired');
+        $wallets->post($this->admin, $wallet->refresh(), 'adjustment', '-4.40', 'Approved prior debit', 'TEST-SHORT-ADJ');
+        app(Rating::class)->internal($attempt);
+        $this->assertSame(0, $wallet->refresh()->available_minor);
+        $this->assertSame(20, $attempt->fresh()->reservation->shortfall_minor);
+        $this->assertSame(10, $attempt->fresh()->reservation->answer_paid_minor);
+        $this->assertTrue($wallets->verify($wallet)['ok']);
+        app(Rating::class)->internal($attempt);
+        $this->assertSame(0, $wallet->refresh()->available_minor);
+    }
+
+    public function test_recording_length_controls_the_charge_for_short_and_long_answered_calls(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '100.00', 'Recording billing test', 'TEST-RECORDING');
+        $expected = 10000;
+        foreach ([0, 5000, 62000, 180000] as $actualMs) {
+            [$attempt] = $this->attempt($actualMs, recordingMs: 62000);
+            $wallets->reserve($attempt);
+            app(Rating::class)->internal($attempt);
+            $expected -= 60;
+            $this->assertSame($expected, $wallet->refresh()->available_minor);
+            $this->assertSame(62000, $attempt->fresh()->rating->duration_ms);
+            $this->assertSame(2, $attempt->fresh()->rating->billable_minutes);
+            $this->assertSame('recording_minute_v1', $attempt->fresh()->rating->policy_version);
+            $this->assertSame($actualMs, $attempt->fresh()->timingEvidence->duration_ms);
+            app(Rating::class)->internal($attempt);
+            $this->assertSame($expected, $wallet->refresh()->available_minor);
+        }
+        foreach ([60000 => 30, 60001 => 60, 120001 => 90] as $recordingMs => $cost) {
+            [$attempt] = $this->attempt(0, recordingMs: $recordingMs);
+            $wallets->reserve($attempt);
+            app(Rating::class)->internal($attempt);
+            $expected -= $cost;
+            $this->assertSame($expected, $wallet->refresh()->available_minor);
+        }
+        [$unanswered, $proof] = $this->attempt(0, false, recordingMs: 62000);
+        $wallets->reserve($unanswered);
+        app(Rating::class)->import($this->admin, $proof, 'verified-cel', 'Unanswered recording test');
+        $this->assertSame(0, $unanswered->fresh()->rating->amount_minor);
+        $this->assertSame($expected, $wallet->refresh()->available_minor);
+        $this->assertTrue($wallets->verify($wallet)['ok']);
+    }
+
+    public function test_legacy_recording_is_frozen_only_when_the_approved_checksum_matches(): void
+    {
+        $audio = AudioFile::create(['client_id' => $this->client->id, 'duration' => 62, 'checksum' => str_repeat('a', 64)]);
+        $version = CampaignVersion::create(['campaign_id' => $this->campaign->id, 'version' => 1,
+            'snapshot' => ['type' => 'one_way', 'broadcast' => ['audio_id' => $audio->id, 'checksum' => $audio->checksum]],
+            'approved_by' => $this->admin->id, 'approved_at' => now()]);
+        $recipient = CampaignRecipient::create(['campaign_id' => $this->campaign->id, 'status' => 'terminal']);
+        $attempt = CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $version->id, 'attempt_no' => 1]);
+        $this->assertSame(62000, $attempt->fresh()->recordingDurationMs());
+        $audio->update(['duration' => 120, 'checksum' => str_repeat('b', 64)]);
+        $this->assertSame(62000, $attempt->fresh()->recordingDurationMs());
+        $mismatch = CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $recipient->id, 'campaign_version_id' => $version->id, 'attempt_no' => 2]);
+        $this->assertNull($mismatch->fresh()->recordingDurationMs());
+        $this->expectException(LogicException::class);
+        $attempt->update(['recording_duration_ms' => 120000]);
+    }
+
+    public function test_missing_recording_measurement_is_held_instead_of_using_talk_time(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Measurement test', 'TEST-MISSING');
+        [$attempt] = $this->attempt(62000);
+        $version = CampaignVersion::create(['campaign_id' => $this->campaign->id, 'version' => 1, 'snapshot' => ['type' => 'interactive', 'broadcast' => []], 'approved_by' => $this->admin->id, 'approved_at' => now()]);
+        $attempt->update(['campaign_version_id' => $version->id]);
+        DB::table('call_attempts')->where('id', $attempt->id)->update(['recording_duration_ms' => null]);
+        $attempt->refresh();
+        $wallets->reserve($attempt);
+        $this->assertSame('held', app(Rating::class)->internal($attempt));
+        $this->assertDatabaseHas('billing_exceptions', ['call_attempt_id' => $attempt->id, 'issue' => 'recording_duration_missing']);
+        $this->assertNull($attempt->fresh()->rating);
+        $this->assertSame(0, WalletLedgerEntry::where('type', 'answer_charge')->count());
+    }
+
+    public function test_zero_second_answer_and_released_hold_are_still_charged_once(): void
+    {
+        $wallets = app(Wallet::class);
+        $wallet = $this->wallet();
+        $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Answer billing test', 'TEST-ZERO');
+        [$attempt] = $this->attempt(0);
+        $wallets->reserve($attempt);
+        $wallets->release($attempt, 'Previously expired');
+        $this->assertSame('rated', app(Rating::class)->internal($attempt));
+        $this->assertSame(970, $wallet->refresh()->available_minor);
+        $this->assertSame(1, $attempt->fresh()->rating->billable_minutes);
+        $this->assertSame(1, $attempt->fresh()->rating->duration_ms);
+        $this->assertSame(0, $attempt->fresh()->timingEvidence->duration_ms);
+        $this->assertTrue($wallets->verify($wallet)['ok']);
+        $this->artisan('billing:finalize-answered', ['--apply' => true])->assertSuccessful();
+        $this->assertSame(970, $wallet->refresh()->available_minor);
+    }
+
+    public function test_cdr_includes_msisdn_time_and_charge_and_is_account_scoped(): void
+    {
+        [$attempt] = $this->attempt(60001);
+        $attempt->recipient->update(['phone_e164' => '+233241234567']);
+        app(Rating::class)->internal($attempt);
+        $other = app(Accounts::class)->create($this->admin, 'Another CDR client');
+        $foreignCampaign = Campaign::create(['client_id' => $other->id, 'owner_id' => $this->admin->id, 'name' => 'Foreign CDR campaign', 'purpose' => 'Updates', 'type' => 'one_way', 'status' => 'running']);
+        $foreignRecipient = CampaignRecipient::create(['campaign_id' => $foreignCampaign->id, 'status' => 'terminal', 'phone_e164' => '+233209999999']);
+        CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $foreignRecipient->id, 'attempt_no' => 1, 'state' => 'terminal', 'sent_at' => now(), 'ended_at' => now(), 'outcome' => 'busy']);
+        $this->actingAs($this->member)->get('/reports/cdr')->assertOk()->assertSee('+233241234567')->assertSee('60.001 s')->assertDontSee('+233209999999');
+        $this->get('/reports/cdr?to=2026-10-26')->assertOk()->assertSee('+233241234567');
+        $this->get('/reports/cdr?answered=0')->assertOk()->assertDontSee('+233241234567');
+        $csv = $this->get('/reports/cdr.csv')->assertOk()->streamedContent();
+        $this->assertStringContainsString('time_spent_ms', $csv);
+        $this->assertStringContainsString('recording_duration_ms', $csv);
+        $this->assertStringContainsString('recording_minute_v1', $csv);
+        $this->assertStringContainsString('+233241234567', $csv);
+        $this->assertStringContainsString('60001', $csv);
+        $this->assertStringNotContainsString('+233209999999', $csv);
+        $this->get('/reports/cdr?campaign_id='.$foreignCampaign->id)->assertOk()->assertDontSee('+233209999999')->assertDontSee('+233241234567');
     }
 
     public function test_client_reservation_requires_a_wallet_even_for_existing_attempts(): void
@@ -365,7 +582,7 @@ class WalletModuleTest extends TestCase
         $wallets = app(Wallet::class);
         $wallet = $this->wallet();
         $wallets->post($this->admin, $wallet, 'funding', '10.00', 'Initial funding', 'FIN-200', 'expire-funding');
-        [$attempt] = $this->attempt();
+        [$attempt] = $this->attempt(0, false);
         $reservation = $wallets->reserve($attempt);
         $this->assertSame(450, $wallet->refresh()->reserved_minor);
 

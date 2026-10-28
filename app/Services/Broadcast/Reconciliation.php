@@ -53,8 +53,7 @@ class Reconciliation
                 $a->answered_at = $answer;
             }
             $a->save();
-            $engine->terminal($a, $outcome);
-            $a->update(['ended_at' => $ended]);
+            $engine->terminal($a, $outcome, $ended);
             app(Foundation::class)->audit($actor, 'call.reconciled', $a, ['evidence' => $evidence, 'disposition' => $record['disposition']]);
         });
     }

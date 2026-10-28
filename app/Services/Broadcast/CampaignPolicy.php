@@ -29,7 +29,7 @@ class CampaignPolicy
 
     public function retry(CallAttempt $attempt, string $outcome): bool
     {
-        if ($attempt->opted_out_at || $attempt->playback_completed_at || $attempt->ivr_completed_at || $attempt->transfer_answered_at || ! $attempt->sent_at || ! in_array($outcome, ['busy', 'no_answer', 'failed'], true)) {
+        if ($attempt->answered_at || $attempt->opted_out_at || $attempt->playback_completed_at || $attempt->ivr_completed_at || $attempt->transfer_answered_at || ! $attempt->sent_at || ! in_array($outcome, ['busy', 'no_answer', 'failed'], true)) {
             return false;
         }
         $s = CampaignVersion::findOrFail($attempt->campaign_version_id)->snapshot['broadcast'];

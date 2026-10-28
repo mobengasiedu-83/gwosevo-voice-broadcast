@@ -3,29 +3,33 @@
 
 use App\Http\Controllers\BillingDisputeController;
 use App\Http\Controllers\BroadcastController;
+use App\Http\Controllers\CallDetailRecordController;
 use App\Http\Controllers\CallRatingController;
-use App\Http\Controllers\ClientDisputeController;
-use App\Http\Controllers\ClientWalletStatementController;
-use App\Http\Controllers\FinanceReportController;
-use App\Http\Controllers\RatePlanController;
-use App\Http\Controllers\WalletController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ClientAccountController;
 use App\Http\Controllers\ClientAdminController;
+use App\Http\Controllers\ClientDisputeController;
+use App\Http\Controllers\ClientGuideController;
 use App\Http\Controllers\ClientNoticeController;
 use App\Http\Controllers\ClientWalletController;
+use App\Http\Controllers\ClientWalletStatementController;
 use App\Http\Controllers\ContactWorkspaceController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\FinanceReportController;
 use App\Http\Controllers\FoundationController;
 use App\Http\Controllers\IdentityController;
 use App\Http\Controllers\InteractiveController;
 use App\Http\Controllers\InternalTestMediaController;
 use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\PbxMediaController;
 use App\Http\Controllers\PaymentAdminController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentWebhookController;
+use App\Http\Controllers\PbxMediaController;
+use App\Http\Controllers\RatePlanController;
+use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\StaffUserController;
+use App\Http\Controllers\WalletController;
 use App\Http\Middleware\VerifyTurnstile;
 use Illuminate\Support\Facades\Route;
 
@@ -112,7 +116,7 @@ Route::post('/set-password', [IdentityController::class, 'setPassword'])->middle
 */
 
 Route::middleware('auth')->group(function () {
-    Route::get('/account/guide', \App\Http\Controllers\ClientGuideController::class)->name('account.guide');
+    Route::get('/account/guide', ClientGuideController::class)->name('account.guide');
     Route::get('/account/security', [IdentityController::class, 'security'])->name('account.security');
     Route::post('/account/security/contact', [IdentityController::class, 'changeContact'])->middleware(['throttle:5,1', VerifyTurnstile::class.':identity'])->name('account.contact');
     Route::post('/logout', [SessionController::class, 'destroy'])
@@ -511,16 +515,18 @@ Route::middleware('auth')->prefix('billing/payments')->name('billing.')->group(f
     Route::post('/{payment}/refund', [$payments, 'refund'])->middleware('throttle:10,1')->name('payments.refund');
 });
 
-
 Route::middleware('auth')->prefix('administration/staff')->name('staff.')->group(function () {
-    Route::get('/', [\App\Http\Controllers\StaffUserController::class, 'index'])->name('index');
-    Route::post('/', [\App\Http\Controllers\StaffUserController::class, 'store'])->middleware('throttle:20,1')->name('store');
-    Route::post('/{user}/role', [\App\Http\Controllers\StaffUserController::class, 'updateRole'])->whereNumber('user')->middleware('throttle:20,1')->name('role');
+    Route::get('/', [StaffUserController::class, 'index'])->name('index');
+    Route::post('/', [StaffUserController::class, 'store'])->middleware('throttle:20,1')->name('store');
+    Route::post('/{user}/role', [StaffUserController::class, 'updateRole'])->whereNumber('user')->middleware('throttle:20,1')->name('role');
 });
 
 Route::middleware('auth')->prefix('administration/roles')->name('roles.')->group(function () {
-    Route::get('/', [\App\Http\Controllers\RoleManagementController::class, 'index'])->name('index');
-    Route::post('/', [\App\Http\Controllers\RoleManagementController::class, 'store'])->middleware('throttle:20,1')->name('store');
-    Route::put('/{role}', [\App\Http\Controllers\RoleManagementController::class, 'update'])->whereNumber('role')->middleware('throttle:20,1')->name('update');
-    Route::delete('/{role}', [\App\Http\Controllers\RoleManagementController::class, 'destroy'])->whereNumber('role')->middleware('throttle:20,1')->name('destroy');
+    Route::get('/', [RoleManagementController::class, 'index'])->name('index');
+    Route::post('/', [RoleManagementController::class, 'store'])->middleware('throttle:20,1')->name('store');
+    Route::put('/{role}', [RoleManagementController::class, 'update'])->whereNumber('role')->middleware('throttle:20,1')->name('update');
+    Route::delete('/{role}', [RoleManagementController::class, 'destroy'])->whereNumber('role')->middleware('throttle:20,1')->name('destroy');
 });
+
+Route::get('/reports/cdr', [CallDetailRecordController::class, 'index'])->middleware('auth')->name('cdr.index');
+Route::get('/reports/cdr.csv', [CallDetailRecordController::class, 'index'])->middleware(['auth', 'throttle:20,1'])->name('cdr.export');

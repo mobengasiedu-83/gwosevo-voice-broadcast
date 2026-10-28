@@ -51,7 +51,7 @@
 <td>{{ $fmt($currency['available_minor'], $currency['minor_unit_scale']) }} / {{ $fmt($currency['reserved_minor'], $currency['minor_unit_scale']) }}</td>
 </tr>
 @empty
-<tr><td colspan="10">No wallet or attempt activity in this period.</td></tr>
+<tr><td colspan="12">No wallet or attempt activity in this period.</td></tr>
 @endforelse
 </tbody></table></div></section>
 <p>Rated charges are Module 12 amounts. Settled from wallet is the amount actually debited for the attempts in the period (rated charge less any uncovered shortfall). Funding and adjustments are ledger movement in the same period; funding includes both manual and verified payment credits, so Payments is a provider view of the same money, not an additional total. Current balances are shown separately and are verified against the append-only ledger above.</p>
@@ -72,8 +72,10 @@
 <tr><td colspan="8">No client activity in this period.</td></tr>
 @endforelse
 </tbody></table></div></section>
+<section><h2>Separate carrier expenses</h2><p>Calculated from actual answered call time and each attempt's saved carrier rate. These expenses do not debit the client wallet.</p>
+@forelse($summary['carrier_expenses'] as $carrier)<p>{{ $carrier->currency }} {{ $fmt($carrier->cost_minor, $carrier->minor_unit_scale) }} · {{ number_format($carrier->billed_minutes) }} carrier billed minutes</p>@empty<p>No priced carrier usage in this period. Historical costs without a saved carrier rate remain unavailable.</p>@endforelse</section>
 <h2>Per-attempt durations and charges</h2>
-<section><div class="table-scroll"><table><thead><tr><th>Ended (UTC)</th><th>Client</th><th>Campaign</th><th>Attempt</th><th>Answered</th><th>Duration</th><th>Billed minutes</th><th>Charge</th><th>Reservation</th><th>Settlement entry</th></tr></thead><tbody>
+<section><div class="table-scroll"><table><thead><tr><th>Ended (UTC)</th><th>Client</th><th>Campaign</th><th>Attempt</th><th>Answered</th><th>Duration</th><th>Billed minutes</th><th>Charge</th><th>Reservation</th><th>Settlement entry</th><th>Carrier billed minutes</th><th>Carrier cost (calculated)</th></tr></thead><tbody>
 @forelse($rows as $row)
 <tr>
 <td>{{ $row->ended_at ? \Carbon\CarbonImmutable::parse($row->ended_at)->utc()->format('Y-m-d H:i:s') : '—' }}</td>
@@ -85,11 +87,11 @@
 <td>{{ $row->rated_minutes === null ? '—' : number_format($row->rated_minutes) }}</td>
 <td>{{ $row->amount_minor === null ? '—' : $fmt($row->amount_minor, $row->rating_scale ?? $row->wallet_scale) .' '.($row->rating_currency ?? $row->wallet_currency) }}</td>
 <td>{{ $row->reservation_state ?? '—' }}@if($row->shortfall_minor > 0)<br><small>Shortfall {{ $fmt($row->shortfall_minor, $row->rating_scale ?? $row->wallet_scale) }}</small>@endif</td>
-<td>{{ $row->settlement_entry_id ? '#'.$row->settlement_entry_id : '—' }}</td>
+<td>{{ $row->settlement_entry_id ? '#'.$row->settlement_entry_id : '—' }}</td><td>{{ $row->telecom_billed_minutes ?? '—' }}</td><td>{{ $row->telecom_cost_minor === null ? '—' : $row->telecom_currency.' '.$fmt($row->telecom_cost_minor, $row->telecom_scale) }}</td>
 </tr>
 @empty
-<tr><td colspan="10">No attempts ended in this period. Confirm the date range and that calls reached a terminal state.</td></tr>
+<tr><td colspan="12">No attempts ended in this period. Confirm the date range and that calls reached a terminal state.</td></tr>
 @endforelse
 </tbody></table></div>{{ $rows->links() }}</section>
-<p>Duration and billed minutes come from verified Module 12 timing evidence; charges are the immutable rating amount. Reports include unanswered attempts at zero charge. CSV export contains the same authoritative fields and is permission-scoped.</p>
+<p>Actual call duration is recorded separately from client billed minutes, which use the frozen recording length. Carrier billed minutes use actual answered time. Client charges are the immutable rating amount. Reports include unanswered attempts at zero charge. CSV export contains the same authoritative fields and is permission-scoped.</p>
 @endsection

@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\ContactGroup;
 use App\Models\User;
 use App\Models\WalletAccount;
+use App\Services\Billing\CampaignPricing;
 use App\Services\Billing\Tariffs;
 use App\Services\Billing\Wallet;
 use App\Services\Campaigns\Workspace;
@@ -91,6 +92,30 @@ class CampaignEstimateTest extends TestCase
             'audio_id' => $this->audio->id,
             'type' => 'one_way',
         ], $params)));
+    }
+
+    public function test_dynamic_audio_prices_use_the_same_rate_for_every_contact(): void
+    {
+        $this->tariff(20);
+        $this->wallet();
+        foreach ([45 => [1, 20], 60 => [1, 20], 61 => [2, 40], 75 => [2, 40], 120 => [2, 40], 121 => [3, 60], 130 => [3, 60], 180 => [3, 60], 181 => [4, 80], 240 => [4, 80]] as $seconds => [$minutes, $price]) {
+            $this->audio->update(['duration' => $seconds]);
+            $this->estimate()->assertOk()
+                ->assertJsonPath('estimate.minutes_per_call', $minutes)
+                ->assertJsonPath('estimate.per_call_minor', $price)
+                ->assertJsonPath('estimate.total_minor', 3 * $price)
+                ->assertJsonPath('estimate.billing_snapshot.audio_id', $this->audio->id)
+                ->assertJsonPath('estimate.billing_snapshot.rate_minor_per_minute', 20);
+        }
+        $this->audio->update(['duration' => 75]);
+        $ids = $this->group->contacts()->limit(2)->pluck('contacts.id')->implode(',');
+        $this->estimate(['source_group_id' => null, 'contact_ids' => $ids])->assertOk()
+            ->assertJsonPath('estimate.eligible', 2)->assertJsonPath('estimate.per_call_minor', 40)->assertJsonPath('estimate.total_minor', 80);
+        $pricing = app(CampaignPricing::class)->calculate($this->audio->id, 75, app(Tariffs::class)->snapshot($this->client->id), 10000);
+        $this->assertSame(2, $pricing['billable_minutes']);
+        $this->assertSame(40, $pricing['rate_per_contact_minor']);
+        $this->assertSame(400000, $pricing['estimated_campaign_amount_minor']);
+        $this->assertSame(2, app(CampaignPricing::class)->calculate($this->audio->id, 60.001, app(Tariffs::class)->snapshot($this->client->id), 1)['billable_minutes']);
     }
 
     public function test_one_way_holds_the_measured_recording_cost_not_the_maximum_call_duration(): void
@@ -267,10 +292,13 @@ class CampaignEstimateTest extends TestCase
         $this->actingAs($this->member)->get(route('campaigns.create'))
             ->assertOk()
             ->assertSee('Credit forecast')
-            ->assertSee('Contacts in group')
+            ->assertSee('Total Contacts')
             ->assertSee('Eligible contacts after consent/suppression checks')
-            ->assertSee('Recording duration')
-            ->assertSee('Estimated credit for one attempt each')
+            ->assertSee('Audio Duration')
+            ->assertSee('Billable Duration')
+            ->assertSee('Rate Per Minute')
+            ->assertSee('Calculated Rate Per Contact / MSISDN')
+            ->assertSee('Estimated Campaign Cost')
             ->assertSee('Available credit')
             ->assertSee('Estimated additional credit needed')
             ->assertSee('campaign-estimate.js', false);

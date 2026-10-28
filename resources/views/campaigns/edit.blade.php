@@ -5,7 +5,7 @@
 @include('campaigns.nav')
 <div class="flow-steps"><a href="{{ route('contacts.groups') }}">1. Create group</a><a href="{{ route('contacts.imports') }}">2. Upload contacts</a><a href="{{ route('audio.index') }}">3. Upload audio</a><span>4. Create campaign → Audio approved → Ready</span></div>
 <div id="campaign-estimate" data-url="{{ route('campaigns.estimate') }}">@include('campaigns._estimate')</div>
-<script src="{{ asset('js/campaign-estimate.js') }}" defer></script>
+<script src="{{ asset('js/campaign-estimate.js').'?v='.filemtime(public_path('js/campaign-estimate.js')) }}" defer></script>
 
 @php($config=$campaign?->configuration??[])
 <form method="post" action="{{ $campaign?route('campaigns.save_edit',$campaign):route('campaigns.save') }}" class="campaign-editor">@csrf

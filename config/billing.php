@@ -12,4 +12,13 @@ return [
     ],
 
     'max_call_seconds' => (int) env('BILLING_MAX_CALL_SECONDS', 900),
+
+    // Labels actual answer/hangup timing retained for CDRs. Charges use the
+    // full recording length frozen in the approved campaign version.
+    'internal_timing_source' => (string) env('BILLING_INTERNAL_TIMING_SOURCE', 'engine'),
+
+    // Actor attributed to money movements the gateway triggers without a human
+    // present (answer-only rating at hangup). Falls back to the cleanup
+    // administrator so one reviewed billing identity covers both.
+    'system_actor_id' => (int) env('BILLING_SYSTEM_ACTOR_ID', env('BILLING_HOLD_CLEANUP_ACTOR_ID', 0)),
 ];
