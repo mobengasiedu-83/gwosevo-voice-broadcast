@@ -293,6 +293,8 @@ class WalletModuleTest extends TestCase
         CallAttempt::create(['uuid' => (string) Str::uuid(), 'campaign_recipient_id' => $foreignRecipient->id, 'attempt_no' => 1, 'state' => 'terminal', 'sent_at' => now(), 'ended_at' => now(), 'outcome' => 'busy']);
         $this->actingAs($this->member)->get('/reports/cdr')->assertOk()->assertSee('+233241234567')->assertSee('60.001 s')
             ->assertSee('Recording length')->assertDontSee('+233209999999')
+            // Filter bars use the shared secondary button for reset (docs/ui conventions).
+            ->assertSee('<a class="button secondary" href="'.route('cdr.index').'" aria-label="Reset filters">Reset</a>', false)
             // Carrier cost is an internal expense and must never reach a client.
             ->assertDontSee('Carrier billed minutes')->assertDontSee('Carrier cost');
         $this->get('/reports/cdr?to=2026-10-26')->assertOk()->assertSee('+233241234567');

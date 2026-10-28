@@ -8,7 +8,7 @@
     <label>To <input type="date" name="to" value="{{ $filters['to'] ?? '' }}"></label>
     <label>Campaign ID <input type="number" min="1" name="campaign_id" value="{{ $filters['campaign_id'] ?? '' }}"></label>
     <label>Answer <select name="answered"><option value="">All</option><option value="1" @selected(($filters['answered'] ?? '') === '1')>Answered</option><option value="0" @selected(($filters['answered'] ?? '') === '0')>Unanswered</option></select></label>
-    <button type="submit">Filter</button> <a href="{{ route('cdr.index') }}">Reset</a>
+    <button type="submit">Filter</button><a class="button secondary" href="{{ route('cdr.index') }}" aria-label="Reset filters">Reset</a>
 </form>
 <p><a href="{{ route('cdr.export', $filters) }}">Download CDR CSV</a> · {{ $attempts->total() }} call attempts</p>
 <div style="overflow-x:auto"><table><thead><tr><th>Attempt / Campaign</th><th>MSISDN</th><th>State / Outcome</th><th>Sent (UTC)</th><th>Answered (UTC)</th><th>Ended (UTC)</th><th>Time spent</th><th>Recording length</th><th>Billing basis</th><th>Billed minutes</th><th>Charge</th><th>Deducted</th><th>Billing</th>@if($showCarrierCost)<th>Carrier billed minutes</th><th>Carrier cost</th>@endif</tr></thead><tbody>
