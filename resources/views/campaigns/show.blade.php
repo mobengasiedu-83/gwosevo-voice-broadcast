@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title',$campaign->name)
 @section('content')
+@if($campaign)@include('partials.client-identity',['record'=>$campaign])@endif
 @include('campaigns._pricing-snapshot')
 @php($canOperate = auth()->user()->can('broadcast.operate') || (($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()||app(\App\Services\Clients\Tenancy::class)->sameAccount(auth()->user(),$campaign)) && auth()->user()->can('campaigns.manage')))
 <h2>{{ $campaign->name }}</h2><p>{{ $campaign->purpose }} · owner #{{ $campaign->owner_id }} · {{ $campaign->type==='one_way'?'One-way broadcast':'Interactive IVR' }} · <span class="pill">{{ str_replace('_',' ',$campaign->status) }}</span>{{ $campaign->archived_at?' · Archived':'' }}</p>
@@ -24,7 +25,7 @@
 </section>
 
 @can('campaigns.manage')<section><h2>Reuse & lifecycle</h2><form method="post" action="{{ route('campaigns.duplicate',$campaign) }}">@csrf<label>Name for new execution draft<input name="name" required maxlength="255" value="{{ mb_substr($campaign->name,0,220) }} · new run"></label><button>Create new execution draft</button></form>
-@if($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()||app(\App\Services\Clients\Tenancy::class)->sameAccount(auth()->user(),$campaign))<form method="post" action="{{ route('campaigns.template',$campaign) }}">@csrf<label>Template name<input name="name" required maxlength="255" value="{{ $campaign->name }}"></label><label>Version lineage<select name="parent_id"><option value="">New template family</option>@foreach($templates as $t)<option value="{{ $t->id }}">{{ $t->name }} · v{{ $t->version }}</option>@endforeach</select></label><button>Save immutable template version</button></form><p>Templates omit audience and launch schedule. Every execution needs its own audio approval and launch snapshot.</p>
+@if($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()||app(\App\Services\Clients\Tenancy::class)->sameAccount(auth()->user(),$campaign))<form method="post" action="{{ route('campaigns.template',$campaign) }}">@csrf<label>Template name<input name="name" required maxlength="255" value="{{ $campaign->name }}"></label><label>Version lineage<select name="parent_id"><option value="">New template family</option>@foreach($templates as $t)<option value="{{ $t->id }}">{{ $t->name }}{{ isset($adminIdentities) ? ' · '.$adminIdentities->label($t) : '' }} · v{{ $t->version }}</option>@endforeach</select></label><button>Save immutable template version</button></form><p>Templates omit audience and launch schedule. Every execution needs its own audio approval and launch snapshot.</p>
 @if(!in_array($campaign->status,['running','paused','scheduled','pending_approval']))<form method="post" action="{{ route('campaigns.archive',$campaign) }}">@csrf<button name="action" value="{{ $campaign->archived_at?'restore':'archive' }}">{{ $campaign->archived_at?'Restore campaign':'Archive campaign' }}</button></form>@endif
 @endif</section>@endcan
 <section><h2>Review history</h2>@forelse($reviews as $review)<article><h3>{{ ucfirst($review->decision) }} · user #{{ $review->reviewer_id }}</h3><p>{{ $review->reason }}</p><small>{{ $review->created_at }} UTC</small></article>@empty<p>No reviews yet.</p>@endforelse</section>

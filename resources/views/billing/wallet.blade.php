@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title','Wallet · '.$client->name)
 @section('content')
+@if($client)@include('partials.client-identity',['record'=>$client])@endif
 <h1>Wallet · {{ $client->name }}</h1>
 <p><a href="{{ route('billing.wallets') }}">← All wallets</a> · Account status: {{ $client->status }} · <a href="{{ route('clients.show',$client) }}">Client record</a> · <a href="{{ route('billing.payments',['q'=>$client->name]) }}">Online payments</a> · <a href="{{ route('billing.wallets.statement',$client) }}">Download statement CSV</a> · <a href="{{ route('billing.disputes',['q'=>$client->name]) }}">Disputes</a></p>
 @if(session('status'))<p class="notice">{{ session('status') }}</p>@endif

@@ -31,7 +31,7 @@
 <tr>
 <td>{{ $intent->created_at?->format('d M Y H:i') }}</td>
 <td><a href="{{ route('billing.payments.show', $intent->public_id) }}">{{ $intent->receiptNumber() }}</a><br><small>{{ $intent->public_id }}</small></td>
-<td><a href="{{ route('clients.show', $intent->client_id) }}">{{ $intent->client?->name ?? 'Unknown' }}</a></td>
+<td><a href="{{ route('clients.show', $intent->client_id) }}">{{ $intent->client?->name ?? 'Unknown' }}</a>@include('partials.client-identity',['record'=>$intent])</td>
 <td>{{ $intent->provider_reference ?? '—' }}</td>
 <td>{{ $fmt($intent->amount_minor) }} {{ $intent->currency }}</td>
 <td>{{ $intent->statusLabel() }}</td>

@@ -15,7 +15,7 @@
 @if($view==='scheduled')<section>
     <h2>Schedule calendar · Africa/Accra</h2>
     <div class="schedule-calendar">@forelse($calendar as $date=>$items)<article>
-            <h3>{{ $date }}</h3>@foreach($items as $item)<p><a href="{{ route('campaigns.show',$item) }}">{{ $item->scheduled_at->timezone('Africa/Accra')->format('H:i') }} · {{ $item->name }}</a></p>@endforeach
+            <h3>{{ $date }}</h3>@foreach($items as $item)<p><a href="{{ route('campaigns.show',$item) }}">{{ $item->scheduled_at->timezone('Africa/Accra')->format('H:i') }} · {{ $item->name }}</a>@include('partials.client-identity',['record'=>$item])</p>@endforeach
         </article>@empty<p>No scheduled campaigns in this month.</p>@endforelse</div>
     <p>Shows up to 500 launches. The list below includes every matching campaign.</p>
 </section>@endif
@@ -34,7 +34,7 @@
             </tr>
         </thead>
         <tbody>@forelse($campaigns as $c)<tr>
-                <td>{{ $c->name }}<small class="block">{{ $c->type==='one_way'?'One-way':'Interactive' }} · {{ $c->purpose }}</small></td>
+                <td>{{ $c->name }}@include('partials.client-identity',['record'=>$c])<small class="block">{{ $c->type==='one_way'?'One-way':'Interactive' }} · {{ $c->purpose }}</small></td>
                 <td><span class="pill">{{ str_replace('_',' ',$c->status) }}</span><small class="block">{{ $c->versions_count }} launch snapshots{{ $c->archived_at?' · Archived':'' }}</small></td>
                 <td>{{ $c->scheduled_at?->timezone($c->timezone)->format('d M Y H:i')??'Unscheduled' }}<small class="block">{{ $c->timezone }}</small></td>
                 <td>{{ $c->configuration['concurrency']??'—' }} channels · {{ $c->configuration['cps']??'—' }} CPS<small class="block">Weight {{ $c->active_version_id ? $c->priority : ($c->configuration['priority']??1) }}{{ $c->status==='draft'?' · draft values':'' }}</small></td>

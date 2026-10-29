@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title', $client->name)
 @section('content')
+@if($client)@include('partials.client-identity',['record'=>$client])@endif
 <a href="{{ route('clients.index') }}">← Clients</a><h1>{{ $client->name }}</h1><p>{{ $client->uuid }} · {{ ucfirst($client->status) }}</p>
 <nav class="module-tabs" aria-label="Client sections">@foreach(['overview','profile','users','campaigns','activity','finance'] as $section)<a href="{{ route('clients.show',[$client->id,'tab'=>$section]) }}" @if($tab===$section) aria-current="page" class="selected" @endif>{{ ucfirst($section) }}</a>@endforeach</nav>
 @if($tab==='profile')

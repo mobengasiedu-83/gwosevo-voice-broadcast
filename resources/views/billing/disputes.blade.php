@@ -31,7 +31,7 @@
 @forelse($disputes as $dispute)
 <tr>
 <td><small class="mono">{{ $dispute->public_id }}</small><br>{{ $dispute->source }}</td>
-<td>{{ $dispute->client?->name ?? 'Client #'.$dispute->client_id }}</td>
+<td>{{ $dispute->client?->name ?? 'Client #'.$dispute->client_id }}@include('partials.client-identity',['record'=>$dispute])</td>
 <td>{{ ucfirst($dispute->category) }}<br><strong>{{ ucfirst(str_replace('_',' ', $dispute->status)) }}</strong></td>
 <td>{{ $dispute->subject }}<br><small>{{ $dispute->description }}</small>
 @if($dispute->payment)<br><small>Payment {{ $dispute->payment->public_id }}</small>@endif

@@ -12,6 +12,7 @@ use App\Models\ContactGroup;
 use App\Models\User;
 use App\Services\Broadcast\Readiness;
 use App\Services\Clients\Accounts;
+use App\Services\Clients\AdminIdentity;
 use App\Services\Clients\Tenancy;
 use App\Services\Contacts\Imports;
 use App\Services\Contacts\Suppression;
@@ -67,6 +68,44 @@ class ClientIsolationTest extends TestCase
     private function group(User $user): ContactGroup
     {
         return app(Tenancy::class)->run(app(Tenancy::class)->clientId($user), fn () => ContactGroup::create(['owner_id' => $user->id, 'name' => 'Private group']));
+    }
+
+    public function test_admin_sees_client_email_on_owned_records_and_selectors(): void
+    {
+        $this->contact($this->a, 'Alpha contact');
+        $group = $this->group($this->a);
+        $this->ca->update(['profile' => ['contact_email' => 'alpha-contact@example.com']]);
+        app(Tenancy::class)->run($this->ca->id, function () {
+            app(Foundation::class)->createCampaign($this->a, [
+                'name' => 'Alpha campaign', 'purpose' => 'Updates', 'type' => 'one_way',
+            ]);
+            AudioFile::create(['uuid' => (string) Str::uuid(), 'name' => 'Alpha recording', 'status' => 'pending', 'uploaded_by' => $this->a->id]);
+        });
+        foreach (['/contacts', '/contacts/groups', '/contacts/groups/'.$group->id,
+            '/campaigns', '/campaigns/create', '/audio'] as $url) {
+            $this->actingAs($this->admin)->get($url)->assertOk()->assertSee('alpha-contact@example.com');
+        }
+        $this->actingAs($this->b)->get('/contacts')->assertOk()->assertDontSee('alpha-contact@example.com');
+        $this->actingAs($this->b)->get('/audio')->assertOk()->assertDontSee('alpha-contact@example.com');
+    }
+
+    public function test_client_identity_follows_campaign_runs_and_call_attempts(): void
+    {
+        $campaign = Campaign::create(['owner_id' => $this->a->id, 'client_id' => $this->ca->id,
+            'name' => 'Owned campaign', 'purpose' => 'Updates', 'type' => 'one_way']);
+        $recipient = CampaignRecipient::create(['campaign_id' => $campaign->id]);
+        $attempt = CallAttempt::create(['uuid' => (string) Str::uuid(),
+            'campaign_recipient_id' => $recipient->id, 'state' => 'terminal']);
+        $run = (object) ['campaign_id' => $campaign->id];
+        $issue = (object) ['attempt_id' => $attempt->id];
+        $this->actingAs($this->admin);
+        $identity = new AdminIdentity;
+        $identity->prepare(['run' => $run, 'attempt' => $attempt, 'issue' => $issue]);
+        foreach ([$run, $attempt, $issue] as $record) {
+            $this->assertSame('Client Alpha · '.$this->a->email, $identity->label($record));
+        }
+        $this->assertSame('Staff-owned · No client', $identity->label((object) ['client_id' => null]));
+        $this->get(route('cdr.index'))->assertOk()->assertSee($this->a->email);
     }
 
     public function test_contacts_can_repeat_across_accounts_and_are_not_enumerated_or_modified(): void

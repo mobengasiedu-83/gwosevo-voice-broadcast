@@ -9,7 +9,7 @@
 @can('contacts.view')<section id="contacts"><h2>Contacts</h2>
 @can('contacts.manage')<form method="post" action="{{ route('contacts.store') }}">@csrf
 <label>Name <input name="name" required maxlength="255"></label><label>Phone <input name="phone" placeholder="0241234567" required></label><label>Source <input name="source" required maxlength="255"></label><button>Add contact</button></form>@endcan
-@foreach($contacts as $contact)<article><h3>#{{ $contact->id }} {{ $contact->name ?? 'Unnamed contact' }} <small>{{ $contact->phone_e164 }}</small></h3>
+@foreach($contacts as $contact)<article><h3>#{{ $contact->id }} {{ $contact->name ?? 'Unnamed contact' }}@include('partials.client-identity',['record'=>$contact]) <small>{{ $contact->phone_e164 }}</small></h3>
 @can('contacts.manage')
 <p>Groups: {{ $contact->groups->pluck('name')->join(', ') ?: 'None' }}</p>
 <form method="post" action="{{ route('contacts.group',$contact) }}">@csrf<label>Group name <input name="name" required maxlength="255"></label><button>Add to group</button></form>
@@ -24,7 +24,7 @@
 @can('campaigns.view')<section id="campaigns"><h2>Campaigns and approvals</h2>
 @can('campaigns.manage')<form method="post" action="{{ route('campaigns.store') }}">@csrf
 <label>Name <input name="name" required maxlength="255"></label><label>Purpose <input name="purpose" required maxlength="255"></label><label>Type <select name="type"><option value="one_way">One-way</option><option value="interactive">Interactive</option></select></label><button>Create draft</button></form>@endcan
-<table><thead><tr><th>Campaign</th><th>Status</th><th>Review</th></tr></thead><tbody>@foreach($campaigns as $campaign)<tr><td>{{ $campaign->name }}<br><small>{{ $campaign->purpose }}</small></td><td>{{ str_replace('_',' ',$campaign->status) }}</td><td>
+<table><thead><tr><th>Campaign</th><th>Status</th><th>Review</th></tr></thead><tbody>@foreach($campaigns as $campaign)<tr><td>{{ $campaign->name }}<br>@include('partials.client-identity',['record'=>$campaign])<small>{{ $campaign->purpose }}</small></td><td>{{ str_replace('_',' ',$campaign->status) }}</td><td>
 @if($campaign->status==='draft' && ($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()) && auth()->user()->can('campaigns.manage'))
 <details><summary>Edit draft</summary><form method="post" action="{{ route('campaigns.update',$campaign) }}">@csrf<label>Name <input name="name" value="{{ $campaign->name }}" required maxlength="255"></label><label>Purpose <input name="purpose" value="{{ $campaign->purpose }}" required maxlength="255"></label><input type="hidden" name="type" value="{{ $campaign->type }}"><button>Save draft</button></form></details>@endif
 @if(($campaign->status==='draft'  && ($campaign->owner_id===auth()->id()||auth()->user()->isSuperAdministrator()) && auth()->user()->can('campaigns.manage')) || ($campaign->status==='pending_approval' && ($campaign->owner_id!==auth()->id()||auth()->user()->isSuperAdministrator()) && auth()->user()->can('campaigns.approve')))

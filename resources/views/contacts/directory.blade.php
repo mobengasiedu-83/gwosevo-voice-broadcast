@@ -5,7 +5,7 @@
 <p>Find contacts, review consent and organize campaign audiences.</p>@include('contacts.nav')
 <section>
     <form method="get"><label>Search name or phone<input name="q" value="{{ $f['q']??'' }}" maxlength="100"></label><label>Group<select name="group_id">
-                <option value="">All groups</option>@foreach($groups as $g)<option value="{{ $g->id }}" @selected((string)($f['group_id']??'')===(string)$g->id)>{{ $g->name }}</option>@endforeach
+                <option value="">All groups</option>@foreach($groups as $g)<option value="{{ $g->id }}" @selected((string)($f['group_id']??'')===(string)$g->id)>{{ $g->name }}{{ isset($adminIdentities) ? ' · '.$adminIdentities->label($g) : '' }}</option>@endforeach
             </select></label><label>Consent evidence<select name="consent">
                 <option value="">All</option>
                 <option value="granted" @selected(($f['consent']??'')==='granted' )>Has current grant</option>
@@ -28,7 +28,7 @@
             </thead>
             <tbody>@forelse($contacts as $c)<tr>
                     <td>{{ $c->id }}</td>
-                    <td><a href="{{ route('contacts.show',$c) }}">{{ $c->name??'Unnamed' }}</a></td>
+                    <td><a href="{{ route('contacts.show',$c) }}">{{ $c->name??'Unnamed' }}</a>@include('partials.client-identity',['record'=>$c])</td>
                     <td>{{ $c->phone_e164 }}</td>
                     <td>{{ $c->source }}</td>
                     <td>{{ $c->active_consents_count }}<small class="block">Purpose-specific evidence required</small></td>

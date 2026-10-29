@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title','Payment '.$intent->receiptNumber())
 @section('content')
+@if($intent)@include('partials.client-identity',['record'=>$intent])@endif
 @php($fmt = fn ($minor) => \App\Services\Billing\Wallet::amount((int) $minor, $intent->minor_unit_scale))
 <h1>Payment {{ $intent->receiptNumber() }}</h1>
 <p><a href="{{ route('billing.payments') }}">← All payments</a> · <a href="{{ route('clients.show', $intent->client_id) }}">{{ $intent->client?->name }}</a> · <a href="{{ route('billing.wallets.show', $intent->client_id) }}">Wallet</a></p>

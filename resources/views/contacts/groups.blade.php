@@ -36,7 +36,7 @@
             </thead>
             <tbody>@forelse($groups as $g)<tr>
                     <td>{{ $g->id }}</td>
-                    <td><a href="{{ route('contacts.groups.show',$g) }}">{{ $g->name }}</a></td>
+                    <td><a href="{{ route('contacts.groups.show',$g) }}">{{ $g->name }}</a>@include('partials.client-identity',['record'=>$g])</td>
                     <td>{{ $g->description??'—' }}</td>
                     <td><span class="pill">{{ $g->category }}</span></td>
                     <td>{{ number_format($g->contacts_count) }}</td>
