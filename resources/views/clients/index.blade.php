@@ -28,7 +28,7 @@
                 </tr>
             </thead>
             <tbody>@forelse($clients as $client)<tr>
-                    <td><a href="{{ route('clients.show',$client->id) }}">{{ $client->name }}</a><small>{{ $client->uuid }}</small></td>
+                    <td><a href="{{ route('clients.show',$client->id) }}">{{ $client->name }}</a><br><small>{{ $client->display_email }}</small><br><small>{{ $client->uuid }}</small></td>
                     <td>{{ $client->status }}</td>
                     <td>{{ $client->memberships_count }}</td>
                     <td>{{ $client->contacts_count }}</td>

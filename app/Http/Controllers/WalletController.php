@@ -20,7 +20,7 @@ class WalletController extends Controller
             'q' => 'nullable|string|max:80',
             'state' => 'nullable|in:all,funded,unfunded,held',
         ]);
-        $clients = Client::with('wallet')
+        $clients = Client::withDisplayEmail()->with('wallet')
             ->withCount(['walletReservations as held_reservations_count' => fn ($query) => $query->where('state', 'held')])
             ->when($filters['q'] ?? null, fn ($query, $term) => $query->where('name', 'like', '%'.addcslashes($term, '%_\\').'%'))
             ->when(($filters['state'] ?? 'all') === 'funded', fn ($query) => $query->whereHas('wallet'))

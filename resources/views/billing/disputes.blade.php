@@ -11,7 +11,7 @@
 </div>
 <section><h2>Open a dispute</h2>
 <form method="post" action="{{ route('billing.disputes.store') }}" class="stack-form">@csrf
-<label>Client<select name="client_id" required><option value="">Select client</option>@foreach($clients as $client)<option value="{{ $client->id }}" @selected((string) old('client_id') === (string) $client->id)>{{ $client->name }} · {{ $client->status }}</option>@endforeach</select></label>
+<label>Client<select name="client_id" required><option value="">Select client</option>@foreach($clients as $client)<option value="{{ $client->id }}" @selected((string) old('client_id') === (string) $client->id)>{{ $client->name }} · {{ $client->display_email }} · {{ $client->status }}</option>@endforeach</select></label>
 <label>Category<select name="category">@foreach(\App\Models\BillingDispute::CATEGORIES as $category)<option value="{{ $category }}" @selected(old('category') === $category)>{{ ucfirst($category) }}</option>@endforeach</select></label>
 <label>Subject<input name="subject" required minlength="5" maxlength="160" value="{{ old('subject') }}"></label>
 <label>Description<textarea name="description" required minlength="10" maxlength="4000">{{ old('description') }}</textarea></label>

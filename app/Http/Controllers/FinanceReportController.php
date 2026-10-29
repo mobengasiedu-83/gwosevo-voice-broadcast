@@ -24,7 +24,7 @@ class FinanceReportController extends Controller
         $rows = $report->rows($filters);
         $summary = $report->summary($filters);
         $clientRows = $report->clients($filters);
-        $clients = Client::orderBy('name')->get(['id', 'name']);
+        $clients = Client::withDisplayEmail()->orderBy('name')->get(['id', 'name']);
 
         return response()->view('billing.finance', compact('input', 'rows', 'summary', 'clientRows', 'clients'))
             ->header('Cache-Control', 'private, no-store');

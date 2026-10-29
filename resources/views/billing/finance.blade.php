@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title','Finance reports')
 @section('content')
+@php($clientEmails = $clients->pluck('display_email', 'id'))
 <h1>Finance reports and reconciliation</h1>
 <p>Read-only view of per-attempt durations, rated charges, wallet settlements, payments, refunds and disputes. Nothing on this page changes a balance. <a href="{{ route('billing.rates') }}">Rate plans →</a> · <a href="{{ route('billing.wallets') }}">Wallets →</a> · <a href="{{ route('billing.payments') }}">Payments →</a> · <a href="{{ route('billing.disputes') }}">Disputes →</a></p>
 @if(session('status'))<p class="notice">{{ session('status') }}</p>@endif
@@ -30,7 +31,7 @@
 <form method="get" class="campaign-filters">
 <label>From<input type="date" name="from" value="{{ $input['from'] ?? $summary['period']['from'] }}"></label>
 <label>To<input type="date" name="to" value="{{ $input['to'] ?? $summary['period']['to'] }}"></label>
-<label>Client<select name="client_id"><option value="">All clients</option>@foreach($clients as $client)<option value="{{ $client->id }}" @selected((string) ($input['client_id'] ?? '') === (string) $client->id)>{{ $client->name }}</option>@endforeach</select></label>
+<label>Client<select name="client_id"><option value="">All clients</option>@foreach($clients as $client)<option value="{{ $client->id }}" @selected((string) ($input['client_id'] ?? '') === (string) $client->id)>{{ $client->name }} · {{ $client->display_email }}</option>@endforeach</select></label>
 <label>Currency<select name="currency"><option value="">All currencies</option>@foreach(['GHS','USD','EUR','GBP'] as $currency)<option value="{{ $currency }}" @selected(($input['currency'] ?? '') === $currency)>{{ $currency }}</option>@endforeach</select></label>
 <button>Run report</button>
 <a class="button secondary" href="{{ route('billing.finance.export', $input) }}">Export attempts CSV</a>
@@ -59,7 +60,7 @@
 <section><div class="table-scroll"><table><thead><tr><th>Client</th><th>Wallet</th><th>Attempts / answered</th><th>Minutes</th><th>Charges</th><th>Settled</th><th>Shortfall</th><th>Open disputes</th></tr></thead><tbody>
 @forelse($clientRows as $clientRow)
 <tr>
-<td>{{ $clientRow->client_name }}</td>
+<td>{{ $clientRow->client_name }}<br><small>{{ $clientEmails[$clientRow->client_id] ?? 'No email' }}</small></td>
 <td>{{ $clientRow->currency ? $fmt($clientRow->available_minor, $clientRow->minor_unit_scale).' '.$clientRow->currency : 'No wallet' }}</td>
 <td>{{ number_format((int) $clientRow->attempts) }} / {{ number_format((int) $clientRow->answered) }}</td>
 <td>{{ number_format((int) $clientRow->billable_minutes) }}</td>
@@ -79,7 +80,7 @@
 @forelse($rows as $row)
 <tr>
 <td>{{ $row->ended_at ? \Carbon\CarbonImmutable::parse($row->ended_at)->utc()->format('Y-m-d H:i:s') : '—' }}</td>
-<td>{{ $row->client_name }}</td>
+<td>{{ $row->client_name }}<br><small>{{ $clientEmails[$row->client_id] ?? 'No email' }}</small></td>
 <td>{{ $row->campaign_name }}</td>
 <td><small class="mono">{{ $row->attempt_uuid }}</small><br>{{ $row->outcome ?? $row->state }}</td>
 <td>{{ $row->answered_at ? 'Yes' : 'No' }}</td>

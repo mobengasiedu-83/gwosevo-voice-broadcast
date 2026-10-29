@@ -1,6 +1,7 @@
 @extends('foundation.layout')
 @section('title','Rate plans')
 @section('content')
+@php($clientEmails = $clients->pluck('display_email', 'id'))
 <h1>Rate plans and client assignments</h1>
 <p>Approved call tariffs are immutable versions. Rates are stored in integer minor units per billed minute; clients are priced only through their assigned version. Module 12 ratings freeze the assigned snapshot on each attempt. <a href="{{ route('billing.finance') }}">Open finance reports →</a></p>
 @if(session('status'))<p class="notice">{{ session('status') }}</p>@endif
@@ -30,7 +31,7 @@
 </section>
 <section><h2>Assign a tariff</h2>
 <form method="post" action="{{ route('billing.rates.assign') }}" class="stack-form">@csrf
-<label>Client<select name="client_id" required><option value="">Select client</option>@foreach($clients as $client)<option value="{{ $client->id }}" @selected((string) old('client_id') === (string) $client->id)>{{ $client->name }} · {{ $client->status }}</option>@endforeach</select></label>
+<label>Client<select name="client_id" required><option value="">Select client</option>@foreach($clients as $client)<option value="{{ $client->id }}" @selected((string) old('client_id') === (string) $client->id)>{{ $client->name }} · {{ $client->display_email }} · {{ $client->status }}</option>@endforeach</select></label>
 <label>Tariff version<select name="tariff_id" required><option value="">Select tariff</option>@foreach($tariffOptions as $tariff)<option value="{{ $tariff->id }}" @selected((string) old('tariff_id') === (string) $tariff->id)>{{ $tariff->code }} v{{ $tariff->version }} · {{ $tariff->currency }} {{ $tariff->rate_minor_per_minute }} minor/min</option>@endforeach</select></label>
 <label>Reason<input name="reason" required minlength="3" maxlength="1000" value="{{ old('reason') }}" placeholder="Approved commercial assignment"></label>
 <button>Assign tariff</button>
@@ -55,7 +56,7 @@
 <section><div class="table-scroll"><table><thead><tr><th>Client</th><th>Status</th><th>Assigned tariff</th><th>Rate</th><th>Wallet</th><th>Denomination</th><th>Updated (UTC)</th></tr></thead><tbody>
 @forelse($assignments as $assignment)
 <tr>
-<td>{{ $assignment->client_name }}</td>
+<td>{{ $assignment->client_name }}<br><small>{{ $clientEmails[$assignment->client_id] ?? 'No email' }}</small></td>
 <td>{{ $assignment->status }}</td>
 <td>{{ $assignment->code }} v{{ $assignment->version }} · {{ $assignment->playback_policy }}</td>
 <td>{{ \App\Services\Billing\Wallet::amount((int) $assignment->rate_minor_per_minute, (int) $assignment->minor_unit_scale) }} {{ $assignment->currency }} / min</td>

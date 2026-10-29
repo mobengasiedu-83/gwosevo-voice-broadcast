@@ -54,7 +54,7 @@ class ClientAdminController extends Controller
         } else {
             $query->orderBy('id', ($filters['sort'] ?? '') === 'oldest' ? 'asc' : 'desc');
         }
-        $clients = $query->withCount(['memberships', 'campaigns', 'contacts'])->paginate(20)->withQueryString();
+        $clients = $query->withDisplayEmail()->withCount(['memberships', 'campaigns', 'contacts'])->paginate(20)->withQueryString();
         $counts = Client::selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status');
 
         return response()->view('clients.index', compact('clients', 'filters', 'counts'))->header('Cache-Control', 'private, no-store');

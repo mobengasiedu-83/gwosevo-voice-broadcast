@@ -42,7 +42,7 @@
             <tbody>
                 @forelse($clients as $client)
                 <tr>
-                    <td>{{ $client->name }}</td>
+                    <td>{{ $client->name }}<br><small>{{ $client->display_email }}</small></td>
                     <td>{{ $client->status }}</td>
                     @if($client->wallet)
                     <td>{{ $client->wallet->currency }}</td>

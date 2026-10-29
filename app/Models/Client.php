@@ -22,6 +22,24 @@ class Client extends Model
         });
     }
 
+    public function scopeWithDisplayEmail($query)
+    {
+        return $query->addSelect('clients.*')->selectSub(
+            ClientMembership::query()->join('users', 'users.id', '=', 'client_memberships.user_id')
+                ->whereColumn('client_memberships.client_id', 'clients.id')
+                ->where('client_memberships.status', 'active')
+                ->whereNotNull('users.email')->where('users.email', '!=', '')
+                ->orderByRaw("CASE WHEN client_memberships.role = 'owner' THEN 0 ELSE 1 END")
+                ->orderBy('client_memberships.id')->limit(1)->select('users.email'),
+            'login_email'
+        );
+    }
+
+    public function getDisplayEmailAttribute(): string
+    {
+        return trim($this->profile['contact_email'] ?? '') ?: ($this->login_email ?: 'No email');
+    }
+
     public function memberships()
     {
         return $this->hasMany(ClientMembership::class);

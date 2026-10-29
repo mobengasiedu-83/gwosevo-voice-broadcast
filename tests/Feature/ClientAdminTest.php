@@ -23,6 +23,22 @@ class ClientAdminTest extends TestCase
         $this->admin->assignRole('Super Administrator');
     }
 
+    public function test_client_labels_prefer_contact_email_and_fall_back_to_active_login(): void
+    {
+        $client = Client::create(['name' => 'Similar name', 'status' => 'active']);
+        $owner = User::factory()->create(['email' => 'owner@example.com']);
+        $membership = $client->memberships()->create([
+            'user_id' => $owner->id, 'role' => 'owner', 'status' => 'active',
+        ]);
+        $this->assertSame('owner@example.com', Client::withDisplayEmail()->findOrFail($client->id)->display_email);
+        $this->actingAs($this->admin)->get('/clients')->assertOk()->assertSee('owner@example.com');
+        $client->update(['profile' => ['contact_email' => 'contact@example.com']]);
+        $this->assertSame('contact@example.com', Client::withDisplayEmail()->findOrFail($client->id)->display_email);
+        $client->update(['profile' => []]);
+        $membership->update(['status' => 'revoked']);
+        $this->assertSame('No email', Client::withDisplayEmail()->findOrFail($client->id)->display_email);
+    }
+
     public function test_admin_can_create_filter_and_render_every_client_section(): void
     {
         $this->actingAs($this->admin)->post('/clients', ['name' => 'Alpha customer'])->assertRedirect();

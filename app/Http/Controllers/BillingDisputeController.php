@@ -31,7 +31,7 @@ class BillingDisputeController extends Controller
             ->orderByRaw("CASE WHEN status IN ('open','under_review') THEN 0 ELSE 1 END")
             ->orderByDesc('id')->paginate(25)->withQueryString();
         $counts = BillingDispute::selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status');
-        $clients = Client::orderBy('name')->get(['id', 'name', 'status']);
+        $clients = Client::withDisplayEmail()->orderBy('name')->get(['id', 'name', 'status']);
 
         return response()->view('billing.disputes', compact('disputes', 'counts', 'clients', 'filters'))
             ->header('Cache-Control', 'private, no-store');

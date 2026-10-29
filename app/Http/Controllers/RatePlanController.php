@@ -38,7 +38,7 @@ class RatePlanController extends Controller
                 'ct.updated_at', 'w.currency as wallet_currency', 'w.minor_unit_scale as wallet_scale',
                 'w.available_minor'])
             ->orderBy('cl.name')->paginate(50, ['*'], 'assignments_page')->withQueryString();
-        $clients = Client::orderBy('name')->limit(500)->get(['id', 'name', 'status']);
+        $clients = Client::withDisplayEmail()->orderBy('name')->limit(500)->get(['id', 'name', 'status']);
         $tariffOptions = CallTariff::orderBy('code')->orderByDesc('version')->get();
         $stats = [
             'versions' => CallTariff::count(),
